@@ -36,6 +36,7 @@ print(f"database -> {dst}")
 PY
 
 cp "$KEY" "$DEST/master-$STAMP.key"
+chmod 600 "$DEST/platform-$STAMP.db"
 chmod 600 "$DEST/master-$STAMP.key"
 echo "key      -> $DEST/master-$STAMP.key"
 
