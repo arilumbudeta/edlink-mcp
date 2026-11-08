@@ -184,17 +184,25 @@ def looks_like_html(content: bytes) -> bool:
     return head in (b"<!doc", b"<html")
 
 
+def client_is_authenticated(client: httpx.Client) -> bool:
+    """True kalau client bawa header Authorization ATAU httpx.Client.auth."""
+    if any(key.lower() == "authorization" for key in client.headers):
+        return True
+    return getattr(client, "_auth", None) is not None
+
+
 def download_media(media: dict, dest: Path, client: httpx.Client | None = None) -> bool:
     """Coba link GCS dulu; kalau 401/403, fallback ke downloadLink Google Drive.
 
-    Klien unduhan tidak pernah membawa Authorization. Host/skema divalidasi
-    sebelum request dan di setiap redirect.
+    Klien unduhan tidak pernah membawa Authorization — baik lewat header
+    maupun httpx.Client.auth. Host/skema divalidasi sebelum request dan di
+    setiap redirect.
     """
     owns_client = client is None
     client = client or download_client()
     try:
-        if any(key.lower() == "authorization" for key in client.headers):
-            print(f"    GAGAL {dest.name}: klien unduhan membawa Authorization")
+        if client_is_authenticated(client):
+            print(f"    GAGAL {dest.name}: klien unduhan terautentikasi")
             return False
         candidates = [("gcs", (media.get("file") or {}).get("link"))]
         drive_url = (media.get("values") or {}).get("downloadLink")

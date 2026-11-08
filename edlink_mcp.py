@@ -11,7 +11,12 @@ Kredensial dibaca dari (urutan prioritas):
   1. Environment variables  EDLINK_EMAIL / EDLINK_PASSWORD
   2. File config.json       di folder yang sama dengan script ini
 
-Jalankan:  python edlink_mcp.py   (stdio MCP)
+Jalankan lokal:  python edlink_mcp.py                       (stdio MCP)
+Jalankan HTTP :  EDLINK_MCP_TRANSPORT=http python edlink_mcp.py
+                 endpoint /mcp, bind 0.0.0.0, port dari EDLINK_MCP_PORT (default 8765).
+                 Wajib: EDLINK_MCP_AUTH_TOKEN (bearer), EDLINK_MCP_ISSUER_URL.
+                 Opsional: EDLINK_MCP_HOST, EDLINK_MCP_ALLOWED_HOSTS, EDLINK_MCP_ALLOWED_ORIGINS.
+
 """
 
 import html as html_lib
@@ -19,6 +24,7 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import time
 import uuid
 import webbrowser
@@ -43,6 +49,10 @@ OAUTH_URL = f"{API_BASE}/auth/google"  # 302 -> accounts.google.com, callback ->
 REQUEST_TIMEOUT = 30.0
 TOKEN_MAX_AGE = 60 * 60 * 8  # cache token maksimal 8 jam sebelum dipakai ulang
 
+# Transport Streamable HTTP (buat deploy publik / ChatGPT custom MCP app)
+DEFAULT_HTTP_PORT = 8765
+MOUNT_PATH = "/mcp"
+
 _TOKEN_EXPIRED_MSG = (
     "Token EdLink expired. Login ulang di edlink.id (via Google), lalu ambil token "
     "baru: di halaman edlink.id/classes jalankan di console browser: "
@@ -50,7 +60,85 @@ _TOKEN_EXPIRED_MSG = (
     "— atau ikuti langkah 'Ambil token baru' di README.md"
 )
 
-mcp = _MCPServer("edlink")
+
+def _env_list(name: str) -> list[str]:
+    return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
+
+
+class StaticBearerVerifier:
+    """Verifikasi Bearer token statis dengan perbandingan constant-time."""
+
+    def __init__(self, expected_token: str) -> None:
+        self._expected = expected_token.encode("utf-8")
+
+    async def verify_token(self, token: str) -> Any:
+        from mcp.server.auth.provider import AccessToken
+
+        candidate = token.encode("utf-8")
+        if not secrets.compare_digest(candidate, self._expected):
+            return None
+        return AccessToken(
+            token="***", client_id="static-token", scopes=[], subject="edlink-mcp"
+        )
+
+
+def _build_http_server():
+    """FastMCP + Streamable HTTP. Start gagal kalau bearer token/issuer belum diset."""
+    auth_token = os.environ.get("EDLINK_MCP_AUTH_TOKEN", "").strip()
+    if not auth_token:
+        raise RuntimeError(
+            "EDLINK_MCP_AUTH_TOKEN belum diset — server HTTP tidak akan start "
+            "tanpa autentikasi."
+        )
+    issuer_url = os.environ.get("EDLINK_MCP_ISSUER_URL", "").strip()
+    if not issuer_url:
+        raise RuntimeError(
+            "EDLINK_MCP_ISSUER_URL belum diset (contoh https://host.example)."
+        )
+    host = os.environ.get("EDLINK_MCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("EDLINK_MCP_PORT", str(DEFAULT_HTTP_PORT)))
+    allowed_hosts = _env_list("EDLINK_MCP_ALLOWED_HOSTS") or [
+        f"localhost:{port}",
+        f"127.0.0.1:{port}",
+    ]
+    allowed_origins = _env_list("EDLINK_MCP_ALLOWED_ORIGINS")
+
+    from mcp.server.auth.settings import AuthSettings
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    resource_server_url = issuer_url.rstrip("/") + MOUNT_PATH
+    server = _MCPServer(
+        "edlink",
+        host=host,
+        port=port,
+        streamable_http_path=MOUNT_PATH,
+        stateless_http=True,
+        json_response=True,
+        max_request_body_size=2 * 1024 * 1024,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
+        ),
+        auth=AuthSettings(
+            issuer_url=issuer_url,
+            resource_server_url=resource_server_url,
+            required_scopes=None,
+            validate_token_resource=False,  # verifier ini yang pegang validasi
+        ),
+        token_verifier=StaticBearerVerifier(auth_token),
+    )
+    return server
+
+
+def _make_server():
+    transport = os.environ.get("EDLINK_MCP_TRANSPORT", "stdio").lower()
+    if transport in ("http", "streamable-http"):
+        return _build_http_server(), transport
+    return _MCPServer("edlink"), "stdio"
+
+
+mcp, _TRANSPORT = _make_server()
 
 
 def tool():
@@ -1130,4 +1218,7 @@ async def edlink_login_status() -> str:
 # ------------------------------------------------------------------ main ---
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    if _TRANSPORT in ("http", "streamable-http"):
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="stdio")

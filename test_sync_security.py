@@ -36,26 +36,50 @@ class DownloadSecurityTests(unittest.TestCase):
         finally:
             client.close()
 
-    def test_download_rejects_authenticated_client(self) -> None:
+    def _reject_authed_client(self, client: httpx.Client) -> None:
         seen: list[str] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             seen.append(str(request.url))
             return httpx.Response(200, content=b"%PDF-1.4")
 
+        if client.is_closed:
+            self.fail("client unexpectedly closed before download")
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "x.pdf"
+            ok = sync.download_media(
+                {"file": {"link": "https://storage.googleapis.com/x.pdf"}, "extension": "pdf"},
+                dest,
+                client=client,
+            )
+            self.assertFalse(ok)
+            self.assertEqual(seen, [])
+            self.assertFalse(dest.exists())
+
+    def test_download_rejects_authorization_header_client(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"%PDF-1.4")
+
         client = mock_client(handler)
         client.headers["Authorization"] = "Bearer secret"
         try:
-            with tempfile.TemporaryDirectory() as tmp:
-                dest = Path(tmp) / "x.pdf"
-                ok = sync.download_media(
-                    {"file": {"link": "https://storage.googleapis.com/x.pdf"}, "extension": "pdf"},
-                    dest,
-                    client=client,
-                )
-                self.assertFalse(ok)
-                self.assertEqual(seen, [])
-                self.assertFalse(dest.exists())
+            self._reject_authed_client(client)
+        finally:
+            client.close()
+
+    def test_download_rejects_httpx_auth_object_client(self) -> None:
+        """Bypass check: auth lewat httpx.Client.auth, bukan header."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"%PDF-1.4")
+
+        client = httpx.Client(
+            transport=httpx.MockTransport(handler),
+            follow_redirects=False,
+            auth=("user", "secret"),
+        )
+        try:
+            self.assertTrue(sync.client_is_authenticated(client))
+            self._reject_authed_client(client)
         finally:
             client.close()
 
