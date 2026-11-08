@@ -1,0 +1,19 @@
+# kredensial & token — JANGAN pernah commit
+config.json
+token_cache.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.mcp-env/
+
+# node
+node_modules/
+
+# vendored skill clones (118MB, re-clone lihat .agent-skills/README.md)
+.agent-skills/
+
+# log & os
+*.log
+.DS_Store
