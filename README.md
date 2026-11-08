@@ -349,7 +349,22 @@ python edlink_mcp.py
 
 Endpoint: `POST https://host.example/mcp`.
 
-Dua mode auth:
+### Lokal atau publik? Pilih salah satu
+
+**Local MCP (stdio) — paling aman.** Server jalan di mesinmu, tidak ada port
+yang terbuka, tidak ada URL yang bisa bocor. Token EdLink tidak pernah keluar
+dari komputer sendiri. Ini pilihan yang dipakai kalau kamu hanya memakai satu
+perangkat.
+
+**Public URL MCP — praktis.** Server jalan di VM dan bisa diakses dari mana
+saja, termasuk ChatGPT. Lebih gampang, tapi URL-nya bisa dipakai siapa pun yang
+tahu alamatnya, jadi seluruh isi EdLink-mu ikut terbuka. Pakai ini kalau kamu
+butuh akses jarak jauh dan sudah paham risikonya.
+
+**Ringkas:** lokal untuk keamanan maksimal, publik untuk kemudahan. Kalau ragu,
+pakai lokal.
+
+Dua mode auth HTTP:
 
 1. **Bearer statis** (default) — `EDLINK_MCP_AUTH_TOKEN` wajib, dibandingkan
    constant-time. Untuk MCP Inspector, Codex, atau skrip sendiri.

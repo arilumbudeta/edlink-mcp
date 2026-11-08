@@ -151,14 +151,14 @@ Kuliah di luar repo. `git pull` tidak menyentuhnya.
 instabox-port publish 8765 --name edlink-mcp --json
 ```
 
-**Privat** (URL butuh `_token`, ini yang dipakai):
+**Privat** (URL butuh `_token`):
 
 ```bash
 instabox-port publish 8765 --name edlink-mcp --private --json
 ```
 
-Output memuat `token` dan `tokenUrl`. Token ditampilkan **sekali**; simpan di
-tempat aman. Rotasi:
+Output memuat `token` dan `tokenUrl` untuk mode privat. Token ditampilkan
+**sekali**; simpan di tempat aman. Rotasi:
 
 ```bash
 instabox-port publish 8765 --private --rotate-token --json
@@ -171,14 +171,22 @@ instabox-port list
 instabox-port unpublish 8765
 ```
 
-Endpoint yang dipakai ChatGPT:
+### Deployment saat ini
+
+Port 8765 dipublikasikan **publik**. Endpoint yang dipakai ChatGPT:
 
 ```
-https://<host>.instabox.tech/mcp?_token=<private-token>
+https://<host>.instabox.tech/mcp
 ```
 
-URL berlaku selama sandbox berjalan. Kalau sandbox di-stop, publikasi ikut
-berhenti dan perlu dipublish ulang.
+Konsekuensinya: siapa pun yang tahu URL itu bisa membaca data EdLink yang bisa
+diakses oleh token di `.env`. Kalau ingin gerbang tambahan, pindah ke
+`--private` lalu pakai `?_token=...` di URL. URL berlaku selama sandbox
+berjalan; kalau sandbox di-stop, publikasi berhenti dan perlu dipublish ulang.
+
+**Lokal vs publik.** Local MCP (stdio) tidak membuka port apa pun dan tidak
+membuat URL, jadi paling aman untuk pemakaian satu perangkat. Public URL MCP
+praktis dan bisa dipakai ChatGPT, tapi lebih terbuka. Kalau ragu, pilih lokal.
 
 ## 8. Koneksi ChatGPT
 
@@ -188,8 +196,8 @@ Berdasarkan dokumentasi resmi OpenAI (developers.openai.com/plugins):
    **Add custom MCP server**.
 2. Isi nama dan deskripsi.
 3. Di bagian **Connection**, pilih **public endpoint** dan tempel URL lengkap
-   termasuk `/mcp` dan `?_token=...`.
-4. Autentikasi: pilih tanpa auth. Gerbang auth ada di `_token`.
+   termasuk `/mcp`.
+4. Autentikasi: pilih tanpa auth. Endpoint ini publik.
 5. Setujui risk warning → **Create as a plugin**.
 6. Tinjau tool yang terdeteksi (harus 18), lalu install dan uji di chat.
 
@@ -233,8 +241,7 @@ dan memanggil minimal satu tool EdLink. Sampai itu terjadi, statusnya
 | Gejala | Penyebab | Perbaikan |
 | --- | --- | --- |
 | `401` tanpa `_token` | gate proxy | tambahkan `?_token=...` |
-| `401` dengan `_token`, mode A | bearer aplikasi aktif | set `EDLINK_MCP_TRUST_PROXY_AUTH=1` atau kirim `Authorization` |
-| `421 Invalid Host` | `Host` tidak ada di `EDLINK_MCP_ALLOWED_HOSTS` | tambahkan host publik, restart |
+| `401` dengan `_token`, mode A | bearer aplikasi aktif | set `EDLINK_MCP_TRUST_PROXY_AUTH=1` atau kirim `Authorization` || `421 Invalid Host` | `Host` tidak ada di `EDLINK_MCP_ALLOWED_HOSTS` | tambahkan host publik, restart |
 | `502` dari proxy | aplikasi mati / port salah | `systemctl status`, cek port di `.env` |
 | service gagal start | `EDLINK_MCP_AUTH_TOKEN`/`ISSUER_URL` kosong | isi `.env`, lihat `journalctl` |
 | `token tidak ditemukan` | `.env` tidak terbaca | cek `EnvironmentFile` dan permission |
