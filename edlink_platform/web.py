@@ -319,13 +319,14 @@ async def unlink_post(request: Request, user: Any) -> Response:
     uid = user["user_id"]
     store.disconnect(uid)
     security.revoke_mcp_tokens(uid)
+    security.revoke_refresh_tokens(uid)
     db.audit(uid, "edlink.unlink", "", _ip(request))
     return RedirectResponse("/dashboard?ok=" + _q("Koneksi EdLink dihapus, token MCP dicabut."), status_code=302)
 
 
 async def revoke_tokens_post(request: Request, user: Any) -> Response:
     uid = user["user_id"]
-    count = security.revoke_mcp_tokens(uid)
+    count = security.revoke_mcp_tokens(uid) + security.revoke_refresh_tokens(uid)
     db.audit(uid, "mcp.tokens_revoked", str(count), _ip(request))
     return RedirectResponse("/dashboard?ok=" + _q(f"{count} token dicabut."), status_code=302)
 
@@ -452,6 +453,7 @@ async def admin_action(request: Request, viewer: Any) -> Response:
             conn.execute("UPDATE users SET status='suspended' WHERE id=?", (target,))
         security.revoke_all_sessions(target)
         security.revoke_mcp_tokens(target)
+        security.revoke_refresh_tokens(target)
     elif action == "activate":
         with db.tx() as conn:
             conn.execute("UPDATE users SET status='active' WHERE id=?", (target,))
@@ -459,9 +461,11 @@ async def admin_action(request: Request, viewer: Any) -> Response:
         security.revoke_all_sessions(target)
     elif action == "revoke_tokens":
         security.revoke_mcp_tokens(target)
+        security.revoke_refresh_tokens(target)
     elif action == "unlink":
         store.disconnect(target)
         security.revoke_mcp_tokens(target)
+        security.revoke_refresh_tokens(target)
     db.audit(viewer["user_id"], "admin." + action, target, _ip(request))
     return RedirectResponse("/admin", status_code=302)
 

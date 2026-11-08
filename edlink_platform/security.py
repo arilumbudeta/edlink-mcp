@@ -21,6 +21,7 @@ from . import db
 SESSION_COOKIE = "edlink_session"
 SESSION_TTL = int(60 * 60 * 24 * 14)  # 14 hari
 MCP_TOKEN_TTL = int(60 * 60 * 24 * 30)  # 30 hari
+REFRESH_TOKEN_TTL = int(60 * 60 * 24 * 90)  # 90 hari
 CODE_TTL = 300
 
 _hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, hash_len=32)
@@ -178,6 +179,59 @@ def list_mcp_tokens(user_id: str) -> list[Any]:
         " WHERE user_id=? ORDER BY created_at DESC",
         (user_id,),
     )
+
+
+# ---------------------------------------------------------- refresh tokens ---
+
+def create_refresh_token(
+    user_id: str, client_id: str = "", scope: str = "", ttl: int = REFRESH_TOKEN_TTL
+) -> str:
+    """Terbitkan refresh token OAuth. Hanya hash yang masuk database."""
+    raw = "edr_" + secrets.token_urlsafe(32)
+    with db.tx() as conn:
+        conn.execute(
+            "INSERT INTO oauth_refresh_tokens"
+            " (token_hash, client_id, user_id, scope, created_at, expires_at, rotated, revoked)"
+            " VALUES (?,?,?,?,?,?,0,0)",
+            (sha256_hex(raw), client_id[:120], user_id, scope[:120], db.now(), db.now() + ttl),
+        )
+    return raw
+
+
+def refresh_token_row(raw: str) -> Any | None:
+    """Baris refresh token kalau masih sah (belum diputar, belum dicabut, belum kedaluwarsa)."""
+    if not raw:
+        return None
+    row = db.q1(
+        "SELECT r.token_hash, r.client_id, r.user_id, r.scope, r.expires_at, r.rotated, r.revoked,"
+        " u.email, u.is_admin, u.status"
+        " FROM oauth_refresh_tokens r JOIN users u ON u.id = r.user_id"
+        " WHERE r.token_hash = ?",
+        (sha256_hex(raw),),
+    )
+    if row is None or row["rotated"] or row["revoked"] or row["expires_at"] < db.now():
+        return None
+    if row["status"] != "active":
+        return None
+    return row
+
+
+def rotate_refresh_token(raw: str) -> bool:
+    """Tandai token lama terpakai. False kalau sudah diputar lebih dulu (replay)."""
+    with db.tx() as conn:
+        cur = conn.execute(
+            "UPDATE oauth_refresh_tokens SET rotated=1 WHERE token_hash=? AND rotated=0 AND revoked=0",
+            (sha256_hex(raw),),
+        )
+        return cur.rowcount == 1
+
+
+def revoke_refresh_tokens(user_id: str) -> int:
+    with db.tx() as conn:
+        cur = conn.execute(
+            "UPDATE oauth_refresh_tokens SET revoked=1 WHERE user_id=? AND revoked=0", (user_id,)
+        )
+        return cur.rowcount
 
 
 # -------------------------------------------------------------------- pkce ---

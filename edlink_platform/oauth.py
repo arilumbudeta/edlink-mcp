@@ -63,7 +63,7 @@ def authorization_server_metadata(request: Request) -> JSONResponse:
             "registration_endpoint": f"{base}/oauth/register",
             "scopes_supported": SCOPES,
             "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
             "code_challenge_methods_supported": ["S256"],
             "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
             "authorization_response_iss_parameter_supported": True,
@@ -268,9 +268,33 @@ async def token(request: Request) -> Response:
     except Exception:
         return JSONResponse({"error": "invalid_request"}, status_code=400)
 
-    if str(form.get("grant_type") or "") != "authorization_code":
-        return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+    grant = str(form.get("grant_type") or "")
+    if grant == "authorization_code":
+        return _authorization_code_grant(form)
+    if grant == "refresh_token":
+        return _refresh_token_grant(form)
+    return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
 
+
+def _issue_tokens(user_id: str, client_id: str, scope: str) -> JSONResponse:
+    """Terbitkan pasangan access + refresh token. Token asli hanya dikirim di sini."""
+    access = security.create_mcp_token(
+        user_id, client_id=client_id, name="oauth:" + (client_id or "")[:40]
+    )
+    refresh = security.create_refresh_token(user_id, client_id=client_id, scope=scope)
+    return JSONResponse(
+        {
+            "access_token": access,
+            "token_type": "Bearer",
+            "expires_in": security.MCP_TOKEN_TTL,
+            "refresh_token": refresh,
+            "refresh_token_expires_in": security.REFRESH_TOKEN_TTL,
+            "scope": scope or "edlink.read",
+        }
+    )
+
+
+def _authorization_code_grant(form) -> Response:
     code = str(form.get("code") or "")
     verifier = str(form.get("code_verifier") or "")
     client_id = str(form.get("client_id") or "")
@@ -292,14 +316,24 @@ async def token(request: Request) -> Response:
     with db.tx() as conn:
         conn.execute("UPDATE oauth_authorization_codes SET used=1 WHERE code=?", (row["code"],))
 
-    raw = security.create_mcp_token(
-        row["user_id"], client_id=row["client_id"], name="oauth:" + (row["client_id"] or "")[:40]
-    )
-    return JSONResponse(
-        {
-            "access_token": raw,
-            "token_type": "Bearer",
-            "expires_in": security.MCP_TOKEN_TTL,
-            "scope": row["scope"] or "edlink.read",
-        }
-    )
+    return _issue_tokens(row["user_id"], row["client_id"], row["scope"] or "edlink.read")
+
+
+def _refresh_token_grant(form) -> Response:
+    raw = str(form.get("refresh_token") or "")
+    client_id = str(form.get("client_id") or "")
+
+    row = security.refresh_token_row(raw)
+    if row is None:
+        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+    if client_id and row["client_id"] and row["client_id"] != client_id:
+        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+
+    # Rotasi: token lama mati. Replay token lama ditolak, bukan diterbitkan ulang.
+    if not security.rotate_refresh_token(raw):
+        security.revoke_refresh_tokens(row["user_id"])
+        db.audit(row["user_id"], "oauth.refresh_replay", row["client_id"][:80], "")
+        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+
+    db.audit(row["user_id"], "oauth.refresh", row["client_id"][:80], "")
+    return _issue_tokens(row["user_id"], row["client_id"], row["scope"] or "edlink.read")

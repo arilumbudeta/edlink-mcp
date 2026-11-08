@@ -51,11 +51,15 @@ Tool **tidak pernah** menerima `user_id` dari argumen. Skema 18 tool tidak berub
 - Sesi web: cookie `HttpOnly`, `SameSite=Lax`, `Secure` di HTTPS, TTL 14 hari,
   yang disimpan hanya hash SHA-256.
 - Token MCP: `edm_...`, TTL 30 hari, disimpan sebagai hash, bisa dicabut per user.
+- Refresh token: `edr_...`, TTL 90 hari, disimpan sebagai hash, **diputar setiap
+  kali dipakai**. Token lama langsung mati; replay token lama dianggap
+  kompromi dan mencabut semua refresh token user itu.
 - OAuth 2.1: authorization code + PKCE `S256`, DCR di `/oauth/register`,
   metadata di `/.well-known/oauth-authorization-server` dan
   `/.well-known/oauth-protected-resource`, parameter `resource` di-echo,
-  `iss` dikirim di redirect.
-- Rate limit: signup 5/jam/IP, login 10/15 menit per IP dan per email.
+  `iss` dikirim di redirect. Grant yang didukung: `authorization_code`,
+  `refresh_token`.
+- Rate limit: signup 10/jam/IP, login 10/15 menit per IP dan per email.
 
 ## Penyimpanan kredensial EdLink
 
@@ -78,6 +82,7 @@ Tool **tidak pernah** menerima `user_id` dari argumen. Skema 18 tool tidak berub
 | `mcp_tokens` | hash token MCP, client_id OAuth, expiry, revoked |
 | `oauth_clients` | hasil DCR: client_id, secret opsional, redirect_uris |
 | `oauth_authorization_codes` | kode sekali pakai, PKCE challenge, resource, expiry |
+| `oauth_refresh_tokens` | hash refresh token, client, scope, rotated/revoked, expiry |
 | `audit_events` | aksi, user, ip, waktu. Tanpa nilai rahasia |
 | `rate_limits` | counter per key + window |
 
@@ -119,6 +124,35 @@ membaca token atau password user.
 `EDLINK_MCP_TRUST_PROXY_AUTH=1` diset otomatis oleh `platform_main.py`: auth
 FastMCP dimatikan karena `IdentityMiddleware` yang memverifikasi token.
 
+## Migrasi dari single-user
+
+Deployment single-user menyimpan kredensial di `.env` (`EDLINK_TOKEN` atau
+`EDLINK_EMAIL`/`EDLINK_PASSWORD`) atau di `token_cache.json`. Di mode platform
+kredensial itu tidak lagi dibaca — semuanya harus pindah ke tabel
+`edlink_connections`, terenkripsi per user.
+
+Pemilik server tetap punya akun EdLink sendiri: ia login sebagai admin, dan
+token lamanya dipindahkan ke baris koneksi milik admin. Akun itu tidak dipakai
+bersama oleh user lain.
+
+```python
+# jalankan di repo, service boleh tetap hidup
+import os, sys
+sys.path.insert(0, "/data/workspace/edlink-mcp")
+os.environ["EDLINK_PLATFORM_DB"] = "/data/workspace/edlink-mcp/data/platform.db"
+os.environ["EDLINK_PLATFORM_KEY_FILE"] = "/data/workspace/edlink-mcp/data/master.key"
+
+from edlink_platform import security, store
+admin = security.find_user_by_email("kamu@example.com")
+store.save_connection(admin["id"], "token", token="<token 129 karakter>")
+assert store.load_credentials(admin["id"])["token"] == "<token 129 karakter>"
+```
+
+Setelah round-trip terbukti, hapus plaintext-nya: beri komentar pada
+`EDLINK_TOKEN`/`EDLINK_EMAIL`/`EDLINK_PASSWORD` di `.env` dan hapus
+`token_cache.json` serta `config.json`. `EDLINK_MCP_AUTH_TOKEN` juga tidak
+terpakai di mode platform karena auth dipegang `IdentityMiddleware`.
+
 ## Backup dan restore
 
 ```bash
@@ -148,7 +182,7 @@ Key yang berbeda membuat semua kredensial EdLink tidak bisa didekripsi
   login ulang otomatis saat token expired, mode token harus tempel token baru.
 - Token MCP tidak kedaluwarsa otomatis saat user ganti password (belum ada
   ganti password). Cabut manual lewat dashboard atau admin.
-- Isolasi diuji lewat `test_platform_e2e.py` (32 pemeriksaan), bukan audit
+- Isolasi diuji lewat `test_platform_e2e.py` (39 pemeriksaan), bukan audit
   pihak ketiga.
 
 ## Uji
@@ -163,10 +197,26 @@ PLATFORM_ADMIN_EMAIL=... PLATFORM_ADMIN_PASSWORD=... \
 python test_platform_e2e.py
 ```
 
-Test membuat akun `alice@test.local` dan `bob@test.local`. Hapus setelah run
-di produksi:
+Test membuat akun `alice<hex>@test.local` dan `bob<hex>@test.local` (akhiran acak
+per run, jadi run berulang tidak bentrok). Hapus setelah run di produksi:
 
 ```bash
 cd /data/workspace/edlink-mcp
-./.venv/bin/python -c "import sqlite3;c=sqlite3.connect('data/platform.db');print(c.execute(\"DELETE FROM users WHERE email LIKE '%@test.local'\").rowcount);c.commit()"
+./.venv/bin/python - <<'PY'
+import sqlite3
+conn = sqlite3.connect("data/platform.db")
+conn.execute("PRAGMA foreign_keys=ON")   # WAJIB: cascade tidak jalan tanpanya
+print("users:", conn.execute("DELETE FROM users WHERE email LIKE '%@test.local'").rowcount)
+for table in ("user_sessions", "edlink_connections", "mcp_tokens", "oauth_authorization_codes"):
+    cur = conn.execute(f"DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM users)")
+    print(f"{table} orphans:", cur.rowcount)
+print("oauth_clients:", conn.execute("DELETE FROM oauth_clients").rowcount)
+conn.execute("DELETE FROM rate_limits")
+conn.commit()
+PY
 ```
+
+`sqlite3` CLI tidak menyalakan foreign key secara default, jadi menghapus user
+tanpa `PRAGMA foreign_keys=ON` meninggalkan baris yatim di tabel turunan.
+Skrip di atas menghapus user lalu menyapu sisa baris yatim.
+

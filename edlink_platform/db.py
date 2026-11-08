@@ -85,6 +85,20 @@ CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
     used            INTEGER NOT NULL DEFAULT 0
 );
 
+-- Refresh token OAuth. Disimpan sebagai hash, diputar pada setiap pemakaian
+-- (rotasi): token lama ditandai rotated=1 dan tidak bisa dipakai dua kali.
+CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+    token_hash TEXT PRIMARY KEY,
+    client_id  TEXT NOT NULL DEFAULT '',
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope      TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    rotated    INTEGER NOT NULL DEFAULT 0,
+    revoked    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_user ON oauth_refresh_tokens(user_id);
+
 CREATE TABLE IF NOT EXISTS audit_events (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     ts      REAL NOT NULL,

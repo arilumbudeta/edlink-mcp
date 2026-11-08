@@ -7,6 +7,13 @@ token_cache.json
 *.pem
 *.key
 
+# data platform multi-user: sqlite + master key + upload per user
+data/
+platform.db
+platform.db-shm
+platform.db-wal
+master.key
+
 # python
 __pycache__/
 *.pyc

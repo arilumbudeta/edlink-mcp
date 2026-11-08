@@ -56,6 +56,12 @@ def rpc(client: httpx.Client, token: str | None, payload: dict) -> httpx.Respons
 
 def oauth_connect(client: httpx.Client, user_email: str) -> str | None:
     """Jalankan alur OAuth dan kembalikan access token."""
+    pair = oauth_connect_full(client, user_email)
+    return pair["access_token"] if pair else None
+
+
+def oauth_connect_full(client: httpx.Client, user_email: str) -> dict | None:
+    """Alur OAuth lengkap: kembalikan access_token + refresh_token."""
     reg = client.post(
         f"{BASE}/oauth/register",
         json={"redirect_uris": ["https://chatgpt.com/connector/oauth/cb_test"], "client_name": "test-client"},
@@ -105,7 +111,13 @@ def oauth_connect(client: httpx.Client, user_email: str) -> str | None:
     )
     if token_resp.status_code != 200:
         return None
-    return token_resp.json().get("access_token")
+    body = token_resp.json()
+    return {
+        "access_token": body.get("access_token"),
+        "refresh_token": body.get("refresh_token"),
+        "client_id": client_id,
+        "raw": body,
+    }
 
 
 def main() -> int:
@@ -168,8 +180,45 @@ def main() -> int:
             check("dashboard tampil", dash.status_code == 200)
             check("dashboard tidak membocorkan token", "dummy-edlink-token" not in dash.text)
 
-            token_a = oauth_connect(alice, alice_email)
+            pair_a = oauth_connect_full(alice, alice_email)
+            token_a = pair_a["access_token"] if pair_a else None
             check("alur OAuth alice menghasilkan token", bool(token_a))
+            check("token response memuat refresh_token", bool(pair_a and pair_a.get("refresh_token")))
+            check(
+                "metadata mengiklankan refresh_token",
+                "refresh_token" in alice.get(f"{BASE}/.well-known/oauth-authorization-server").json().get(
+                    "grant_types_supported", []
+                ),
+            )
+
+            if pair_a and pair_a.get("refresh_token"):
+                r = alice.post(
+                    f"{BASE}/oauth/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": pair_a["refresh_token"],
+                        "client_id": pair_a["client_id"],
+                    },
+                )
+                body = r.json() if r.status_code == 200 else {}
+                check("refresh grant menerbitkan token baru", r.status_code == 200 and bool(body.get("access_token")))
+                check("refresh grant memutar refresh token", bool(body.get("refresh_token")) and body["refresh_token"] != pair_a["refresh_token"])
+
+                new_access = body.get("access_token")
+                if new_access:
+                    r2 = rpc(alice, new_access, {"jsonrpc": "2.0", "id": 9, "method": "tools/list", "params": {}})
+                    check("access token hasil refresh dipakai MCP", r2.status_code == 200)
+
+                replay = alice.post(
+                    f"{BASE}/oauth/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": pair_a["refresh_token"],
+                        "client_id": pair_a["client_id"],
+                    },
+                )
+                check("refresh token lama tidak bisa dipakai ulang", replay.status_code == 400)
+                check("replay mencabut seluruh refresh token user", "invalid_grant" in replay.text)
 
             if token_a:
                 r = rpc(alice, token_a, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}})

@@ -252,5 +252,50 @@ class UploadGuardTests(unittest.TestCase):
             identity.reset_identity(token)
 
 
+class RefreshTokenTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        db.init_db()
+
+    def setUp(self) -> None:
+        self.user = security.create_user(f"r{db.new_id()}@example.test", "password-rrrr-4")
+
+    def test_refresh_token_stored_hashed(self) -> None:
+        raw = security.create_refresh_token(self.user, client_id="edc_x")
+        row = db.q1("SELECT token_hash FROM oauth_refresh_tokens WHERE token_hash=?", (security.sha256_hex(raw),))
+        self.assertIsNotNone(row)
+        self.assertNotEqual(row["token_hash"], raw)
+        self.assertNotIn(raw, str(dict(row)))
+
+    def test_refresh_token_row_lookup(self) -> None:
+        raw = security.create_refresh_token(self.user, client_id="edc_x", scope="edlink.read")
+        row = security.refresh_token_row(raw)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["user_id"], self.user)
+
+    def test_rotate_marks_used_and_blocks_replay(self) -> None:
+        raw = security.create_refresh_token(self.user)
+        self.assertTrue(security.rotate_refresh_token(raw))
+        self.assertFalse(security.rotate_refresh_token(raw))
+        self.assertIsNone(security.refresh_token_row(raw))
+
+    def test_expired_refresh_token_rejected(self) -> None:
+        raw = security.create_refresh_token(self.user, ttl=-5)
+        self.assertIsNone(security.refresh_token_row(raw))
+
+    def test_suspended_user_refresh_rejected(self) -> None:
+        raw = security.create_refresh_token(self.user)
+        with db.tx() as conn:
+            conn.execute("UPDATE users SET status='suspended' WHERE id=?", (self.user,))
+        self.assertIsNone(security.refresh_token_row(raw))
+
+    def test_revoke_all_refresh_tokens(self) -> None:
+        first = security.create_refresh_token(self.user)
+        second = security.create_refresh_token(self.user)
+        self.assertEqual(security.revoke_refresh_tokens(self.user), 2)
+        self.assertIsNone(security.refresh_token_row(first))
+        self.assertIsNone(security.refresh_token_row(second))
+
+
 if __name__ == "__main__":
     unittest.main()
