@@ -394,12 +394,19 @@ menghubungkan akunnya sendiri.
    atau pilih email + password EdLink. Data ini disimpan terenkripsi, hanya
    untuk akunmu.
 3. Salin URL MCP yang tertulis di dashboard: `https://<host>/mcp`.
-4. Di ChatGPT: **Settings → Connectors → Add custom connector** (atau
-   `chatgpt.com/plugins` → tambah MCP server), tempel URL di atas.
-5. ChatGPT membuka halaman izin platform sekali. Setujui; token platform
-   diterbitkan, dan sejak itu ChatGPT memanggil tool dengan identitas akunmu.
-6. Uji dengan meminta ChatGPT memanggil `edlink_setup_status` — hasilnya harus
+4. Di ChatGPT buka [chatgpt.com/plugins](https://chatgpt.com/plugins), tekan
+   tombol plus, lalu **Add custom MCP server**.
+5. Isi nama dan deskripsi, lalu di bagian **Connection** tempel URL MCP
+   (termasuk path `/mcp`).
+6. Di bagian authentication, selesaikan alur OAuth: halaman izin platform
+   terbuka sekali, setujui, dan ChatGPT menerima token untuk akunmu.
+   Baca peringatan risiko yang muncul, lalu **I understand and want to continue**.
+7. Tekan **Create as a plugin**, lalu periksa daftar tool yang ditemukan.
+8. Uji dengan meminta ChatGPT memanggil `edlink_setup_status` — hasilnya harus
    `perlu_setup: false` kalau koneksi EdLink sudah tersimpan.
+
+Kebijakan akun/workspace bisa memblokir custom MCP server; kalau tombolnya
+tidak ada, fitur itu dimatikan di workspace tersebut.
 
 Setiap akun hanya melihat data EdLink miliknya sendiri. Tool tidak pernah
 menerima `user_id` dari argumen; identitas ditentukan dari token di

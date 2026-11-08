@@ -66,7 +66,8 @@ class IdentityMiddleware:
                 )
                 response = Response(payload, status_code=401, media_type="application/json")
                 response.headers["WWW-Authenticate"] = (
-                    f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource"'
+                    f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource", '
+                    'scope="edlink.read edlink.write"'
                 )
                 await response(scope, receive, send)
                 return

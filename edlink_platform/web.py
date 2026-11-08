@@ -478,11 +478,12 @@ def docs_page(request: Request) -> Response:
 <h2>Endpoint MCP</h2>
 <span class="mono">{_esc(proto)}://{_esc(base)}/mcp</span>
 <h2 style="margin-top:20px">ChatGPT</h2>
-<p>Plugins → Add custom MCP server → tempel URL di atas → autentikasi OAuth.
-Halaman izin akan muncul sekali untuk menghubungkan akun platform ke ChatGPT.</p>
+<p>Buka <code>chatgpt.com/plugins</code> → tombol plus → <strong>Add custom MCP server</strong>.
+Isi nama, lalu di bagian <strong>Connection</strong> tempel URL di atas (termasuk <code>/mcp</code>).
+Setujui halaman izin OAuth sekali, lalu <strong>Create as a plugin</strong>.</p>
 <h2 style="margin-top:20px">Klien lain</h2>
 <p>Kirim header <code>Authorization: Bearer &lt;token&gt;</code>. Token dibuat lewat alur OAuth
-atau tercantum di dashboard setelah login.</p>
+dan diperpanjang dengan refresh token (grant <code>refresh_token</code>).</p>
 <h2 style="margin-top:20px">Privasi</h2>
 <p>Kredensial EdLink disimpan terenkripsi per akun. Token EdLink tidak pernah dikirim ke
 model AI, tidak dicatat di log, dan tidak dibagikan ke pengguna lain.</p>
