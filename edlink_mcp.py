@@ -946,6 +946,28 @@ async def edlink_upload_file(path: str, ke_drive: bool = False, parent_id: str |
     parent_id: opsional, folder tujuan kalau ke_drive=True.
     """
     file_path = Path(path).expanduser()
+    user_id = _platform_user_id()
+    if user_id:
+        # Mode platform: user tidak boleh membaca file sembarang di server.
+        root = (Path(os.environ.get("EDLINK_PLATFORM_UPLOAD_DIR", "data/uploads")) / user_id).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        candidate = (root / Path(path).name).resolve()
+        if Path(path).is_absolute() or ".." in Path(path).parts:
+            candidate = (Path(path).expanduser().resolve())
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "Mode platform hanya menerima nama file di folder upload akun "
+                        "ini. Unggah lewat dashboard, atau kirim nama file tanpa path."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        file_path = candidate
     if not file_path.is_file():
         return json.dumps(
             {"ok": False, "error": f"File tidak ditemukan: {file_path}"},

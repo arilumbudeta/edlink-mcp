@@ -220,8 +220,53 @@ Integrasi dinyatakan **berhasil** hanya setelah ChatGPT benar-benar menemukan
 dan memanggil minimal satu tool EdLink. Sampai itu terjadi, statusnya
 "endpoint siap", bukan "terintegrasi".
 
-## 9. Catatan keamanan
+## 8b. Mode platform multi-user
 
+Deployment saat ini menjalankan `platform_main.py`, bukan `edlink_mcp.py`.
+Perbedaan yang penting:
+
+| Hal | Single-user (`edlink_mcp.py`) | Platform (`platform_main.py`) |
+| --- | --- | --- |
+| Akun | satu, dari `.env` | banyak, daftar sendiri |
+| Auth | bearer statis / proxy token | akun platform + OAuth 2.1 (PKCE) |
+| Kredensial | `token_cache.json` | tabel `edlink_connections`, terenkripsi per user |
+| Service | `edlink-mcp.service` | `edlink-platform.service` |
+| Data | folder repo | `/data/workspace/edlink-mcp/data/` |
+
+Unit systemd: `deploy/edlink-platform.service`. Variabel tambahan ada di
+`.env.example` (bagian "Platform multi-user"). `platform_main.py` menyalakan
+`EDLINK_MCP_TRUST_PROXY_AUTH=1` sendiri karena autentikasi ditangani
+`IdentityMiddleware`, bukan bearer FastMCP.
+
+### Pindah dari single-user ke platform
+
+```bash
+cd /data/workspace/edlink-mcp
+./.venv/bin/python -m pip install -r requirements.txt
+mkdir -p data && chmod 700 data
+# tambahkan variabel EDLINK_PLATFORM_* ke .env (lihat .env.example)
+sudo install -m 644 -o root -g root deploy/edlink-platform.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl disable --now edlink-mcp.service
+sudo systemctl enable --now edlink-platform.service
+sudo journalctl -u edlink-platform.service -n 20 --no-pager
+```
+
+Admin pertama dibuat otomatis dari `EDLINK_PLATFORM_ADMIN_EMAIL` +
+`EDLINK_PLATFORM_ADMIN_PASSWORD` saat start pertama. Kalau password dikosongkan,
+tidak ada admin dan tidak ada kredensial default.
+
+### Backup mode platform
+
+```bash
+sqlite3 data/platform.db ".backup '/data/backup/platform-$(date +%F).db'"
+cp data/master.key /data/backup/master.key && chmod 600 /data/backup/master.key
+```
+
+Tanpa `master.key`, token EdLink di database tidak bisa didekripsi. Simpan
+keduanya bersama.
+
+## 9. Catatan keamanan
 - Rahasia hanya di `.env` (mode `600`) dan `token_cache.json` (mode `600`).
   Keduanya di-`.gitignore`.
 - Token EdLink hanya dikirim ke `api.edlink.id`. Unduhan materi memakai klien

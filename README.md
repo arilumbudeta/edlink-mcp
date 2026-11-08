@@ -335,19 +335,13 @@ Kalau token expired dan kamu tidak mau lewat `edlink_login_oauth_link()`:
 
 ## Deploy publik (Streamable HTTP)
 
-Selain stdio, server bisa jalan sebagai endpoint HTTP jarak jauh. Default tetap
-stdio; HTTP hanya aktif kalau `EDLINK_MCP_TRANSPORT` diset.
+Ada dua cara menjalankan server di jaringan:
 
-```bash
-export EDLINK_MCP_TRANSPORT=http
-export EDLINK_MCP_PORT=8765
-export EDLINK_MCP_ISSUER_URL=https://host.example
-export EDLINK_MCP_ALLOWED_HOSTS=host.example,localhost:8765
-export EDLINK_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
-python edlink_mcp.py
-```
-
-Endpoint: `POST https://host.example/mcp`.
+1. **Single-user HTTP** — `edlink_mcp.py` dengan `EDLINK_MCP_TRANSPORT=http`.
+   Satu akun EdLink (punyamu), satu token. Cocok untuk akses pribadi.
+2. **Platform multi-user** — `platform_main.py`. Siapa pun bisa daftar, masing-masing
+   menghubungkan akun EdLink sendiri, kredensial terpisah dan terenkripsi.
+   Ini yang dipakai untuk ChatGPT. Detail: [MULTIUSER.md](MULTIUSER.md).
 
 ### Lokal atau publik? Pilih salah satu
 
@@ -364,7 +358,36 @@ butuh akses jarak jauh dan sudah paham risikonya.
 **Ringkas:** lokal untuk keamanan maksimal, publik untuk kemudahan. Kalau ragu,
 pakai lokal.
 
-Dua mode auth HTTP:
+### Menjalankan single-user HTTP
+
+```bash
+export EDLINK_MCP_TRANSPORT=http
+export EDLINK_MCP_PORT=8765
+export EDLINK_MCP_ISSUER_URL=https://host.example
+export EDLINK_MCP_ALLOWED_HOSTS=host.example,localhost:8765
+export EDLINK_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+python edlink_mcp.py
+```
+
+Endpoint: `POST https://host.example/mcp`.
+
+### Menjalankan platform multi-user
+
+```bash
+export EDLINK_PLATFORM_BASE_URL=https://host.example
+export EDLINK_PLATFORM_DB=./data/platform.db
+export EDLINK_PLATFORM_KEY_FILE=./data/master.key
+export EDLINK_PLATFORM_ADMIN_EMAIL=kamu@example.com
+export EDLINK_PLATFORM_ADMIN_PASSWORD=$(openssl rand -hex 24)
+export EDLINK_MCP_ALLOWED_HOSTS=host.example
+python platform_main.py
+```
+
+Endpoint MCP `POST /mcp`, halaman web `/signup`, `/login`, `/dashboard`, `/admin`.
+Autentikasi memakai OAuth 2.1 dengan PKCE, jadi klien seperti ChatGPT bisa
+menghubungkan akunnya sendiri.
+
+### Dua mode auth HTTP single-user
 
 1. **Bearer statis** (default) — `EDLINK_MCP_AUTH_TOKEN` wajib, dibandingkan
    constant-time. Untuk MCP Inspector, Codex, atau skrip sendiri.

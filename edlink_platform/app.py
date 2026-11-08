@@ -145,6 +145,20 @@ async def revoke_tokens_route(request: Request) -> Response:
     return await web.revoke_tokens_post(request, user)
 
 
+async def upload_page_route(request: Request) -> Response:
+    user = _user(request)
+    if user is None:
+        return RedirectResponse("/login?next=/upload", status_code=302)
+    return web.upload_page(request, user)
+
+
+async def upload_post_route(request: Request) -> Response:
+    user = _user(request)
+    if user is None:
+        return RedirectResponse("/login?next=/upload", status_code=302)
+    return await web.upload_post(request, user)
+
+
 async def authorize_route(request: Request) -> Response:
     sess = security.session_user(web._cookie(request))
     session_user = None
@@ -187,6 +201,8 @@ def build_app(mcp_app) -> Starlette:
         Route("/link", link_route, methods=["POST"]),
         Route("/unlink", unlink_route, methods=["POST"]),
         Route("/tokens/revoke", revoke_tokens_route, methods=["POST"]),
+        Route("/upload", upload_page_route, methods=["GET"]),
+        Route("/upload", upload_post_route, methods=["POST"]),
         Route("/admin", admin_route, methods=["GET"]),
         Route("/admin/user", admin_action_route, methods=["POST"]),
         Route("/.well-known/oauth-protected-resource", oauth.protected_resource_metadata, methods=["GET"]),

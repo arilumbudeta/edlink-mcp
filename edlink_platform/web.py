@@ -284,6 +284,7 @@ def dashboard(request: Request, user: Any) -> Response:
 
 <div class="card">
 <h2>Akun</h2>
+<p><a href="/upload">Upload file untuk dikirim ke EdLink</a></p>
 <form method="post" action="/logout"><button type="submit" class="ghost" style="margin:0">Keluar</button></form>
 </div>"""
     return page("Dashboard — EdLink MCP", body)
@@ -333,6 +334,68 @@ def _q(text: str) -> str:
     from urllib.parse import quote
 
     return quote(text, safe="")
+
+
+# ------------------------------------------------------------------ upload ---
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+def _upload_root(user_id: str):
+    import os
+    from pathlib import Path
+
+    root = (Path(os.environ.get("EDLINK_PLATFORM_UPLOAD_DIR", "data/uploads")) / user_id).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def upload_page(request: Request, user: Any) -> Response:
+    root = _upload_root(user["user_id"])
+    files = sorted(p.name for p in root.iterdir() if p.is_file())[:200]
+    rows = "".join(f"<tr><td class='mono'>{_esc(n)}</td></tr>" for n in files) or "<tr><td>-</td></tr>"
+    err = request.query_params.get("error")
+    ok = request.query_params.get("ok")
+    notice = f'<div class="err">{_esc(err)}</div>' if err else (f'<div class="ok">{_esc(ok)}</div>' if ok else "")
+    body = f"""<div class="card">
+<h1>Upload file</h1>
+<p>File yang diunggah ke sini bisa dikirim ke EdLink lewat tool
+<code>edlink_upload_file(path="&lt;nama file&gt;")</code>.</p>
+{notice}
+<form method="post" action="/upload" enctype="multipart/form-data">
+ <label>File (maksimal 25 MB)</label><input type="file" name="file" required>
+ <button type="submit">Unggah</button>
+</form>
+</div>
+<div class="card">
+<h2>File kamu</h2>
+<table><tr><th>Nama</th></tr>{rows}</table>
+<p><a href="/dashboard">Kembali ke dashboard</a></p>
+</div>"""
+    return page("Upload — EdLink MCP", body)
+
+
+async def upload_post(request: Request, user: Any) -> Response:
+    root = _upload_root(user["user_id"])
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not getattr(upload, "filename", ""):
+        return RedirectResponse("/upload?error=" + _q("Tidak ada file."), status_code=302)
+
+    name = str(upload.filename).replace("\\", "/").split("/")[-1]
+    safe = "".join(ch for ch in name if ch.isalnum() or ch in " ._-()").strip().rstrip(".")
+    if not safe or safe.startswith("."):
+        return RedirectResponse("/upload?error=" + _q("Nama file tidak valid."), status_code=302)
+
+    data = await upload.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        return RedirectResponse("/upload?error=" + _q("File lebih dari 25 MB."), status_code=302)
+    if not data:
+        return RedirectResponse("/upload?error=" + _q("File kosong."), status_code=302)
+
+    (root / safe).write_bytes(data)
+    db.audit(user["user_id"], "upload.file", f"{safe} ({len(data)} byte)", _ip(request))
+    return RedirectResponse("/upload?ok=" + _q(f"{safe} diunggah."), status_code=302)
 
 
 # ------------------------------------------------------------------- admin ---
