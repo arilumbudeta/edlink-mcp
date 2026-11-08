@@ -1,0 +1,36 @@
+[Unit]
+Description=EdLink MCP platform (multi-user, Streamable HTTP)
+Documentation=https://github.com/arilumbudeta/edlink-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+Group=user
+WorkingDirectory=/data/workspace/edlink-mcp
+EnvironmentFile=/data/workspace/edlink-mcp/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/data/workspace/edlink-mcp/.venv/bin/python /data/workspace/edlink-mcp/platform_main.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGINT
+
+# Hardening: hanya butuh baca repo dan tulis data/ (DB + key + WAL).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/data/workspace/edlink-mcp/data
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target
