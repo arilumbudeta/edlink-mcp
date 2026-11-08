@@ -3,6 +3,7 @@ config.json
 token_cache.json
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 
