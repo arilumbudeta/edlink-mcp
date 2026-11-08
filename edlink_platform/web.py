@@ -118,7 +118,7 @@ def signup_get(request: Request) -> Response:
 
 async def signup_post(request: Request) -> Response:
     ip = _ip(request)
-    if not db.rate_limit(f"signup:{ip}", limit=5, window_seconds=3600):
+    if not db.rate_limit(f"signup:{ip}", limit=10, window_seconds=3600):
         return page("Terlalu banyak", '<div class="card"><h1>Terlalu banyak pendaftaran</h1><p>Coba lagi nanti.</p></div>', status=429)
 
     form = await request.form()

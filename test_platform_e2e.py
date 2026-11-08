@@ -112,6 +112,10 @@ def main() -> int:
     print(f"target: {BASE}")
     admin_email = os.environ.get("PLATFORM_ADMIN_EMAIL", "admin@test.local")
     admin_pass = os.environ.get("PLATFORM_ADMIN_PASSWORD", "admin-test-password-123")
+    suffix = secrets.token_hex(4)
+    alice_email = f"alice{suffix}@test.local"
+    bob_email = f"bob{suffix}@test.local"
+    print(f"test users: {alice_email}, {bob_email}")
 
     with httpx.Client(timeout=30, follow_redirects=False) as anon:
         # --- metadata ---
@@ -132,13 +136,13 @@ def main() -> int:
 
         # --- signup dua user ---
         with httpx.Client(timeout=30, follow_redirects=False) as ua:
-            r = signup(ua, "alice@test.local", "alice-password-123")
+            r = signup(ua, alice_email, "alice-password-123")
             check("signup alice", r.status_code == 302, str(r.status_code))
         with httpx.Client(timeout=30, follow_redirects=False) as ub:
-            r = signup(ub, "bob@test.local", "bob-password-1234")
+            r = signup(ub, bob_email, "bob-password-1234")
             check("signup bob", r.status_code == 302, str(r.status_code))
         with httpx.Client(timeout=30, follow_redirects=False) as dup:
-            r = signup(dup, "alice@test.local", "alice-password-123")
+            r = signup(dup, alice_email, "alice-password-123")
             check("email duplikat ditolak", r.status_code == 400)
 
         r = signup(anon, "short@test.local", "abc")
@@ -146,13 +150,13 @@ def main() -> int:
 
         # --- login salah ---
         with httpx.Client(timeout=30, follow_redirects=False) as bad:
-            r = bad.post(f"{BASE}/login", data={"email": "alice@test.local", "password": "salah-password"})
+            r = bad.post(f"{BASE}/login", data={"email": alice_email, "password": "salah-password"})
             check("password salah ditolak 401", r.status_code == 401)
             check("tidak ada cookie sesi saat gagal", "edlink_session" not in bad.cookies)
 
         # --- OAuth alice ---
         with httpx.Client(timeout=30, follow_redirects=False) as alice:
-            r = alice.post(f"{BASE}/login", data={"email": "alice@test.local", "password": "alice-password-123"})
+            r = alice.post(f"{BASE}/login", data={"email": alice_email, "password": "alice-password-123"})
             check("login alice", r.status_code == 302)
             check("cookie sesi terpasang", "edlink_session" in alice.cookies)
 
@@ -164,7 +168,7 @@ def main() -> int:
             check("dashboard tampil", dash.status_code == 200)
             check("dashboard tidak membocorkan token", "dummy-edlink-token" not in dash.text)
 
-            token_a = oauth_connect(alice, "alice@test.local")
+            token_a = oauth_connect(alice, alice_email)
             check("alur OAuth alice menghasilkan token", bool(token_a))
 
             if token_a:
@@ -198,7 +202,7 @@ def main() -> int:
 
             # identitas user benar-benar sampai ke tool: alice punya koneksi,
             # bob tidak. Tool yang sama harus menjawab berbeda.
-            token_a2 = oauth_connect(alice, "alice@test.local")
+            token_a2 = oauth_connect(alice, alice_email)
             alice_call = rpc(alice, token_a2, {
                 "jsonrpc": "2.0", "id": 5, "method": "tools/call",
                 "params": {"name": "edlink_setup_status", "arguments": {}},
@@ -212,12 +216,12 @@ def main() -> int:
 
         # --- bob tidak bisa pakai token alice ---
         with httpx.Client(timeout=30, follow_redirects=False) as bob:
-            bob.post(f"{BASE}/login", data={"email": "bob@test.local", "password": "bob-password-1234"})
+            bob.post(f"{BASE}/login", data={"email": bob_email, "password": "bob-password-1234"})
             dash = bob.get(f"{BASE}/dashboard")
             check("bob tidak melihat data alice", "dummy-edlink-token" not in dash.text)
             check("bob belum terhubung edlink", "belum terhubung" in dash.text)
 
-            bob_token = oauth_connect(bob, "bob@test.local")
+            bob_token = oauth_connect(bob, bob_email)
             bob_call = rpc(bob, bob_token, {
                 "jsonrpc": "2.0", "id": 6, "method": "tools/call",
                 "params": {"name": "edlink_setup_status", "arguments": {}},
@@ -233,12 +237,12 @@ def main() -> int:
             adm.post(f"{BASE}/login", data={"email": admin_email, "password": admin_pass})
             page = adm.get(f"{BASE}/admin")
             check("admin page 200", page.status_code == 200)
-            check("admin melihat daftar user", "alice@test.local" in page.text)
+            check("admin melihat daftar user", alice_email in page.text)
             r = adm.post(f"{BASE}/admin/user", data={"user_id": "", "action": "suspend"})
             check("admin action tanpa user id aman", r.status_code == 302)
 
         with httpx.Client(timeout=30, follow_redirects=False) as bob2:
-            bob2.post(f"{BASE}/login", data={"email": "bob@test.local", "password": "bob-password-1234"})
+            bob2.post(f"{BASE}/login", data={"email": bob_email, "password": "bob-password-1234"})
             r = bob2.get(f"{BASE}/admin")
             check("non-admin ditolak 403", r.status_code == 403)
 
