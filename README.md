@@ -387,6 +387,25 @@ Endpoint MCP `POST /mcp`, halaman web `/signup`, `/login`, `/dashboard`, `/admin
 Autentikasi memakai OAuth 2.1 dengan PKCE, jadi klien seperti ChatGPT bisa
 menghubungkan akunnya sendiri.
 
+### Menghubungkan ChatGPT ke platform
+
+1. Buka `https://<host>/signup`, daftar akun platform, lalu login.
+2. Di `/dashboard`, tempel token EdLink (129 karakter, dari DevTools `edlink.id`)
+   atau pilih email + password EdLink. Data ini disimpan terenkripsi, hanya
+   untuk akunmu.
+3. Salin URL MCP yang tertulis di dashboard: `https://<host>/mcp`.
+4. Di ChatGPT: **Settings → Connectors → Add custom connector** (atau
+   `chatgpt.com/plugins` → tambah MCP server), tempel URL di atas.
+5. ChatGPT membuka halaman izin platform sekali. Setujui; token platform
+   diterbitkan, dan sejak itu ChatGPT memanggil tool dengan identitas akunmu.
+6. Uji dengan meminta ChatGPT memanggil `edlink_setup_status` — hasilnya harus
+   `perlu_setup: false` kalau koneksi EdLink sudah tersimpan.
+
+Setiap akun hanya melihat data EdLink miliknya sendiri. Tool tidak pernah
+menerima `user_id` dari argumen; identitas ditentukan dari token di
+`IdentityMiddleware`. Access token berlaku 30 hari dan diperpanjang otomatis
+lewat refresh token (90 hari, diputar setiap pemakaian).
+
 ### Dua mode auth HTTP single-user
 
 1. **Bearer statis** (default) — `EDLINK_MCP_AUTH_TOKEN` wajib, dibandingkan
