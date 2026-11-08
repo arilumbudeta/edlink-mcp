@@ -333,6 +333,35 @@ Kalau token expired dan kamu tidak mau lewat `edlink_login_oauth_link()`:
 
 ---
 
+## Deploy publik (Streamable HTTP)
+
+Selain stdio, server bisa jalan sebagai endpoint HTTP jarak jauh. Default tetap
+stdio; HTTP hanya aktif kalau `EDLINK_MCP_TRANSPORT` diset.
+
+```bash
+export EDLINK_MCP_TRANSPORT=http
+export EDLINK_MCP_PORT=8765
+export EDLINK_MCP_ISSUER_URL=https://host.example
+export EDLINK_MCP_ALLOWED_HOSTS=host.example,localhost:8765
+export EDLINK_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+python edlink_mcp.py
+```
+
+Endpoint: `POST https://host.example/mcp`.
+
+Dua mode auth:
+
+1. **Bearer statis** (default) — `EDLINK_MCP_AUTH_TOKEN` wajib, dibandingkan
+   constant-time. Untuk MCP Inspector, Codex, atau skrip sendiri.
+2. **Proxy-trust** — `EDLINK_MCP_TRUST_PROXY_AUTH=1` mematikan pemeriksaan
+   bearer karena gerbang auth ada di reverse proxy. Dipakai untuk ChatGPT,
+   yang tidak bisa mengirim API key statis.
+
+Variabel lengkap ada di [.env.example](.env.example), langkah deployment dan
+integrasi ChatGPT ada di [DEPLOYMENT.md](DEPLOYMENT.md).
+
+---
+
 ## Test cepat
 
 ```bash
