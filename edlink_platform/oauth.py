@@ -72,8 +72,17 @@ def authorization_server_metadata(request: Request) -> JSONResponse:
     )
 
 
+def _ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return request.client.host if request.client else ""
+
+
 async def register_client(request: Request) -> Response:
     """Dynamic Client Registration (RFC 7591) sederhana."""
+    if not db.rate_limit(f"oauth_register:{_ip(request)}", limit=30, window_seconds=3600):
+        return JSONResponse({"error": "too_many_requests"}, status_code=429)
     try:
         body: Any = await request.json()
     except Exception:
@@ -263,6 +272,8 @@ async def authorize(request: Request, session_user: Any) -> Response:
 
 
 async def token(request: Request) -> Response:
+    if not db.rate_limit(f"oauth_token:{_ip(request)}", limit=120, window_seconds=900):
+        return JSONResponse({"error": "too_many_requests"}, status_code=429)
     try:
         form = await request.form()
     except Exception:

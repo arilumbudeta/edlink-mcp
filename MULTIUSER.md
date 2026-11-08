@@ -70,7 +70,8 @@ Di mode platform, tool setup ikut menyesuaikan:
   `/.well-known/oauth-protected-resource`, parameter `resource` di-echo,
   `iss` dikirim di redirect. Grant yang didukung: `authorization_code`,
   `refresh_token`.
-- Rate limit: signup 10/jam/IP, login 10/15 menit per IP dan per email.
+- Rate limit: signup 10/jam/IP, login 10/15 menit per IP dan per email,
+  OAuth register 30/jam/IP, OAuth token 120/15 menit per IP.
 
 ## Penyimpanan kredensial EdLink
 
