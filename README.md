@@ -14,9 +14,6 @@ perantara yang menyimpan kredensial.
 ![EdLink](https://img.shields.io/badge/EdLink-reverse--engineered-0A66C2?style=for-the-badge)
 ![Stars](https://img.shields.io/github/stars/arilumbudeta/edlink-mcp?style=for-the-badge&logo=github&color=FFD700)
 
-> **Level 6 / 7** — `[██████████████████░░░] 86%`
-> Auto-pilot tugas sudah nyala. Berikutnya: kuis interaktif & proctoring.
-
 ---
 
 ## ⚠️ Ini Reverse Engineering — baca dulu
@@ -336,37 +333,6 @@ Kalau token expired dan kamu tidak mau lewat `edlink_login_oauth_link()`:
 
 ---
 
-## Star Progression
-
-[![Star History Chart](https://api.star-history.com/svg?repos=arilumbudeta/edlink-mcp&type=Date)](https://www.star-history.com/#arilumbudeta/edlink-mcp&Date)
-
-Grafik di atas di-generate oleh [star-history.com](https://www.star-history.com/).
-
-| Level | Kemampuan | Status |
-|---|---|---|
-| 1 | Auth + baca tugas terbuka | Selesai |
-| 2 | Jadwal harian & bulanan | Selesai |
-| 3 | Kelas + notifikasi + API explorer | Selesai |
-| 4 | Detail tugas + submission gate | Selesai |
-| 5 | Kirim & edit tugas + lampiran | Selesai |
-| 6 | Auto-pilot tugas (kerjakan + kirim) | Selesai |
-| 7 | Kuis interaktif + proctoring | Belum |
-
-**Progress:** `[██████████████████░░░] 86%` → level 7 belum.
-
-Cara naik level:
-
-- Awalnya cukup `edlink_jadwal_hari_ini()` tiap hari.
-- Lanjut cek `edlink_kelas()` + `edlink_notifikasi()`.
-- Sebelum mengerjakan, baca `edlink_tugas_detail()`.
-- Kirim satu tugas lewat `edlink_send_tugas()`.
-- Pakai **frasa pemicu** di bagian auto-pilot.
-- Level terakhir menunggu update kuis interaktif.
-
-Kalau repo ini berguna, kasih star di GitHub — star-nya yang naikin level berikutnya.
-
----
-
 ## Test cepat
 
 ```bash
@@ -422,3 +388,9 @@ Semua endpoint di atas kebanyakan **POST**. `edlink_api` default `method="AUTO"`
   menolak kalau submission ditutup atau terkunci.
 - `edlink_setup_manual` menyimpan password di `config.json` (file lokal, di-ignore git).
   Kalau tidak mau menyimpan password, pakai mode token/OAuth.
+
+---
+
+## Star Progression
+
+[![Star History Chart](https://api.star-history.com/svg?repos=arilumbudeta/edlink-mcp&type=Date)](https://www.star-history.com/#arilumbudeta/edlink-mcp&Date)
