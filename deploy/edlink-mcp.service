@@ -1,0 +1,34 @@
+[Unit]
+Description=EdLink MCP server (Streamable HTTP)
+Documentation=https://github.com/arilumbudeta/edlink-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+Group=user
+WorkingDirectory=/data/workspace/edlink-mcp
+EnvironmentFile=/data/workspace/edlink-mcp/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/data/workspace/edlink-mcp/.venv/bin/python /data/workspace/edlink-mcp/edlink_mcp.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGINT
+
+# Hardening: proses hanya perlu baca repo + tulis token cache di folder itu.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/data/workspace/edlink-mcp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

@@ -83,18 +83,40 @@ class StaticBearerVerifier:
 
 
 def _build_http_server():
-    """FastMCP + Streamable HTTP. Start gagal kalau bearer token/issuer belum diset."""
-    auth_token = os.environ.get("EDLINK_MCP_AUTH_TOKEN", "").strip()
-    if not auth_token:
-        raise RuntimeError(
-            "EDLINK_MCP_AUTH_TOKEN belum diset — server HTTP tidak akan start "
-            "tanpa autentikasi."
-        )
+    """FastMCP + Streamable HTTP.
+
+    Dua mode autentikasi:
+
+    1. Bearer statis (default) — `EDLINK_MCP_AUTH_TOKEN` wajib, dibandingkan
+       constant-time. Cocok untuk klien yang bisa mengirim header Authorization
+       (MCP Inspector, Codex, skrip).
+
+    2. Proxy-trust — `EDLINK_MCP_TRUST_PROXY_AUTH=1`. Server tidak memeriksa
+       Authorization karena gerbang auth ada di reverse proxy / port publisher
+       (mis. instabox-port --private, yang hanya melayani URL ber-`_token`).
+       Hanya aman bila satu-satunya jalur masuk memang proxy tersebut.
+
+    ChatGPT tidak bisa mengirim API key statis, jadi mode 2 yang dipakai untuk
+    integrasi ChatGPT.
+    """
+    trust_proxy = os.environ.get("EDLINK_MCP_TRUST_PROXY_AUTH", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     issuer_url = os.environ.get("EDLINK_MCP_ISSUER_URL", "").strip()
     if not issuer_url:
         raise RuntimeError(
             "EDLINK_MCP_ISSUER_URL belum diset (contoh https://host.example)."
         )
+    auth_token = os.environ.get("EDLINK_MCP_AUTH_TOKEN", "").strip()
+    if not trust_proxy and not auth_token:
+        raise RuntimeError(
+            "EDLINK_MCP_AUTH_TOKEN belum diset — server HTTP tidak akan start "
+            "tanpa autentikasi (atau set EDLINK_MCP_TRUST_PROXY_AUTH=1 kalau "
+            "gerbang auth ada di reverse proxy)."
+        )
+
     host = os.environ.get("EDLINK_MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("EDLINK_MCP_PORT", str(DEFAULT_HTTP_PORT)))
     allowed_hosts = _env_list("EDLINK_MCP_ALLOWED_HOSTS") or [
@@ -103,32 +125,32 @@ def _build_http_server():
     ]
     allowed_origins = _env_list("EDLINK_MCP_ALLOWED_ORIGINS")
 
-    from mcp.server.auth.settings import AuthSettings
     from mcp.server.transport_security import TransportSecuritySettings
 
-    resource_server_url = issuer_url.rstrip("/") + MOUNT_PATH
-    server = _MCPServer(
-        "edlink",
-        host=host,
-        port=port,
-        streamable_http_path=MOUNT_PATH,
-        stateless_http=True,
-        json_response=True,
-        max_request_body_size=2 * 1024 * 1024,
-        transport_security=TransportSecuritySettings(
+    kwargs: dict[str, Any] = {
+        "host": host,
+        "port": port,
+        "streamable_http_path": MOUNT_PATH,
+        "stateless_http": True,
+        "json_response": True,
+        "max_request_body_size": 2 * 1024 * 1024,
+        "transport_security": TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
             allowed_hosts=allowed_hosts,
             allowed_origins=allowed_origins,
         ),
-        auth=AuthSettings(
+    }
+    if not trust_proxy:
+        from mcp.server.auth.settings import AuthSettings
+
+        kwargs["auth"] = AuthSettings(
             issuer_url=issuer_url,
-            resource_server_url=resource_server_url,
+            resource_server_url=issuer_url.rstrip("/") + MOUNT_PATH,
             required_scopes=None,
             validate_token_resource=False,  # verifier ini yang pegang validasi
-        ),
-        token_verifier=StaticBearerVerifier(auth_token),
-    )
-    return server
+        )
+        kwargs["token_verifier"] = StaticBearerVerifier(auth_token)
+    return _MCPServer("edlink", **kwargs)
 
 
 def _make_server():
