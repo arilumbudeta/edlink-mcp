@@ -231,7 +231,16 @@ python test_platform_e2e.py
 PLATFORM_TEST_BASE=https://<host> \
 PLATFORM_ADMIN_EMAIL=... PLATFORM_ADMIN_PASSWORD=... \
 python test_platform_e2e.py
+
+# bukti khusus akun pemilik: login -> OAuth -> tools/call -> cabut token
+PLATFORM_TEST_BASE=https://<host> \
+PLATFORM_ADMIN_EMAIL=... PLATFORM_ADMIN_PASSWORD=... \
+python test_owner_live.py
 ```
+
+`test_owner_live.py` membuktikan rantai lengkap untuk akun pemilik: login web,
+OAuth PKCE, `initialize`, `edlink_setup_status`, `edlink_login_status`, lalu
+mencabut token yang dipakai. Skrip ini tidak mencetak token atau kredensial.
 
 Test membuat akun `alice<hex>@test.local` dan `bob<hex>@test.local` (akhiran acak
 per run, jadi run berulang tidak bentrok). Hapus setelah run di produksi:
