@@ -194,7 +194,7 @@ Key yang berbeda membuat semua kredensial EdLink tidak bisa didekripsi
   login ulang otomatis saat token expired, mode token harus tempel token baru.
 - Token MCP tidak kedaluwarsa otomatis saat user ganti password (belum ada
   ganti password). Cabut manual lewat dashboard atau admin.
-- Isolasi diuji lewat `test_platform_e2e.py` (39 pemeriksaan), bukan audit
+- Isolasi diuji lewat `test_platform_e2e.py` (41 pemeriksaan), bukan audit
   pihak ketiga.
 
 ## Uji

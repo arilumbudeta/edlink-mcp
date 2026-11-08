@@ -199,8 +199,15 @@ def _esc(value: Any) -> str:
     return html_lib.escape(str(value or ""), quote=True)
 
 
-def _redirect_error(redirect_uri: str, state: str, error: str, description: str) -> RedirectResponse:
+def _redirect_error(
+    redirect_uri: str, state: str, error: str, description: str, iss: str = ""
+) -> RedirectResponse:
+    # RFC 9207: iss wajib ikut di SETIAP authorization response, termasuk error.
+    # Metadata kita mengiklankan authorization_response_iss_parameter_supported,
+    # jadi klien akan menolak respons tanpa iss.
     params = {"error": error, "error_description": description, "state": state}
+    if iss:
+        params["iss"] = iss
     sep = "&" if "?" in redirect_uri else "?"
     return RedirectResponse(f"{redirect_uri}{sep}{urlencode(params)}", status_code=302)
 
@@ -228,8 +235,13 @@ async def authorize(request: Request, session_user: Any) -> Response:
     if redirect_uri not in allowed:
         return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
 
+    if not _resource_matches(resource, _base(request)):
+        return _redirect_error(
+            redirect_uri, state, "invalid_target", "resource bukan server ini", _base(request)
+        )
+
     if not code_challenge or challenge_method != "S256":
-        return _redirect_error(redirect_uri, state, "invalid_request", "PKCE S256 wajib")
+        return _redirect_error(redirect_uri, state, "invalid_request", "PKCE S256 wajib", _base(request))
 
     if not session_user:
         return RedirectResponse("/login?next=" + _esc(request.url.path + "?" + request.url.query), status_code=302)
@@ -241,7 +253,7 @@ async def authorize(request: Request, session_user: Any) -> Response:
 
     decision = str(params.get("decision") or "")
     if decision != "approve":
-        return _redirect_error(redirect_uri, state, "access_denied", "user menolak")
+        return _redirect_error(redirect_uri, state, "access_denied", "user menolak", _base(request))
 
     code = secrets.token_urlsafe(32)
     with db.tx() as conn:
@@ -280,11 +292,25 @@ async def token(request: Request) -> Response:
         return JSONResponse({"error": "invalid_request"}, status_code=400)
 
     grant = str(form.get("grant_type") or "")
+    base = _base(request)
     if grant == "authorization_code":
-        return _authorization_code_grant(form)
+        return _authorization_code_grant(form, base)
     if grant == "refresh_token":
-        return _refresh_token_grant(form)
+        return _refresh_token_grant(form, base)
     return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+
+
+def _resource_matches(resource: str, base: str) -> bool:
+    """RFC 8707: nilai resource yang diminta harus menunjuk ke server ini.
+
+    Metadata kita memakai `base/mcp`; sebagian klien memakai `base` saja.
+    Keduanya diterima, selain itu ditolak supaya token tidak bisa diterbitkan
+    untuk resource lain.
+    """
+    if not resource:
+        return True
+    normalized = resource.rstrip("/")
+    return normalized in {base.rstrip("/"), base.rstrip("/") + "/mcp"}
 
 
 def _issue_tokens(user_id: str, client_id: str, scope: str) -> JSONResponse:
@@ -305,11 +331,15 @@ def _issue_tokens(user_id: str, client_id: str, scope: str) -> JSONResponse:
     )
 
 
-def _authorization_code_grant(form) -> Response:
+def _authorization_code_grant(form, base: str) -> Response:
     code = str(form.get("code") or "")
     verifier = str(form.get("code_verifier") or "")
     client_id = str(form.get("client_id") or "")
     redirect_uri = str(form.get("redirect_uri") or "")
+    resource = str(form.get("resource") or "")
+
+    if not _resource_matches(resource, base):
+        return JSONResponse({"error": "invalid_target"}, status_code=400)
 
     row = db.q1(
         "SELECT * FROM oauth_authorization_codes WHERE code = ?",
@@ -330,9 +360,13 @@ def _authorization_code_grant(form) -> Response:
     return _issue_tokens(row["user_id"], row["client_id"], row["scope"] or "edlink.read")
 
 
-def _refresh_token_grant(form) -> Response:
+def _refresh_token_grant(form, base: str) -> Response:
     raw = str(form.get("refresh_token") or "")
     client_id = str(form.get("client_id") or "")
+    resource = str(form.get("resource") or "")
+
+    if not _resource_matches(resource, base):
+        return JSONResponse({"error": "invalid_target"}, status_code=400)
 
     row = security.refresh_token_row(raw)
     if row is None:

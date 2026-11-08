@@ -237,7 +237,17 @@ def main() -> int:
                           "code_challenge_method": "S256", "scope": "edlink.read"}
                 alice.get(f"{BASE}/oauth/authorize", params=params)
                 denied = alice.post(f"{BASE}/oauth/authorize", data={**params, "decision": "deny"})
-                check("consent ditolak -> access_denied", "error=access_denied" in denied.headers.get("location", ""))
+                loc = denied.headers.get("location", "")
+                check("consent ditolak -> access_denied", "error=access_denied" in loc)
+                check("error authorization response memuat iss", "iss=" in loc)
+
+                bad_resource = dict(params)
+                bad_resource["resource"] = "https://evil.example/mcp"
+                rejected = alice.get(f"{BASE}/oauth/authorize", params=bad_resource)
+                check(
+                    "resource asing ditolak invalid_target",
+                    rejected.status_code == 302 and "error=invalid_target" in rejected.headers.get("location", ""),
+                )
 
             # PKCE salah
             if token_a:
