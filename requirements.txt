@@ -2,3 +2,7 @@
 # 2.x mengganti API itu; transport HTTP di edlink_mcp.py belum diuji di sana.
 mcp>=1.30.0,<2
 httpx>=0.27.0
+
+# Platform multi-user (platform_main.py). Mode stdio tidak membutuhkannya.
+argon2-cffi>=23.1.0
+cryptography>=42.0.0

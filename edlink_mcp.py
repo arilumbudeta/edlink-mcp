@@ -65,6 +65,20 @@ def _env_list(name: str) -> list[str]:
     return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
 
 
+def _platform_user_id() -> str | None:
+    """User yang sedang memanggil, kalau server jalan di mode platform.
+
+    Mode stdio mengembalikan None → kredensial dibaca dari config.json lokal
+    seperti sebelumnya. Mode HTTP multi-user mengembalikan id user dari token
+    MCP yang sudah diverifikasi middleware.
+    """
+    try:
+        from edlink_platform import identity
+    except ImportError:
+        return None
+    return identity.current_user_id()
+
+
 class StaticBearerVerifier:
     """Verifikasi Bearer token statis dengan perbandingan constant-time."""
 
@@ -185,6 +199,11 @@ def tool():
 # ---------------------------------------------------------------- config ---
 
 def _load_credentials() -> dict[str, str]:
+    user_id = _platform_user_id()
+    if user_id:
+        from edlink_platform import store
+
+        return store.load_credentials(user_id)
     email = os.environ.get("EDLINK_EMAIL", "").strip()
     password = os.environ.get("EDLINK_PASSWORD", "").strip()
     token = os.environ.get("EDLINK_TOKEN", "").strip()
@@ -212,6 +231,11 @@ def _load_credentials() -> dict[str, str]:
 
 def _load_device() -> dict[str, Any]:
     """Device fingerprint stabil — disimpan supaya tiap login konsisten."""
+    user_id = _platform_user_id()
+    if user_id:
+        from edlink_platform import store
+
+        return store.load_device(user_id)
     if TOKEN_CACHE_PATH.exists():
         try:
             cache = json.loads(TOKEN_CACHE_PATH.read_text(encoding="utf-8"))
@@ -233,6 +257,11 @@ def _load_device() -> dict[str, Any]:
 
 
 def _read_token_cache() -> dict[str, Any] | None:
+    user_id = _platform_user_id()
+    if user_id:
+        from edlink_platform import store
+
+        return store.read_token_cache(user_id)
     if not TOKEN_CACHE_PATH.exists():
         return None
     try:
@@ -247,6 +276,12 @@ def _read_token_cache() -> dict[str, Any] | None:
 
 
 def _write_token_cache(token: str, extra: dict[str, Any] | None = None) -> None:
+    user_id = _platform_user_id()
+    if user_id:
+        from edlink_platform import store
+
+        store.write_token_cache(user_id, token, extra=extra, device=_load_device())
+        return
     payload: dict[str, Any] = {
         "token": token,
         "saved_at": time.time(),

@@ -1,0 +1,305 @@
+"""OAuth 2.1 authorization server minimal untuk MCP (ChatGPT-compatible).
+
+Yang disediakan:
+- GET  /.well-known/oauth-protected-resource   (RFC 9728)
+- GET  /.well-known/oauth-authorization-server (RFC 8414)
+- POST /oauth/register                        (Dynamic Client Registration)
+- GET  /oauth/authorize                       (consent, butuh sesi web)
+- POST /oauth/authorize                       (approve/deny)
+- POST /oauth/token                           (authorization_code + PKCE S256)
+
+Token yang diterbitkan adalah token opaque milik platform (bukan JWT), disimpan
+sebagai hash. Verifikasi dilakukan oleh verifier MCP di app.py.
+"""
+
+from __future__ import annotations
+
+import json
+import secrets
+import time
+from typing import Any
+from urllib.parse import urlencode, urlparse
+
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+
+from . import db, security
+
+SCOPES = ["edlink.read", "edlink.write"]
+
+
+def _base(request: Request) -> str:
+    """URL publik server, dari env kalau ada, kalau tidak dari header proxy."""
+    import os
+
+    configured = os.environ.get("EDLINK_PLATFORM_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}"
+
+
+def protected_resource_metadata(request: Request) -> JSONResponse:
+    base = _base(request)
+    return JSONResponse(
+        {
+            "resource": f"{base}/mcp",
+            "authorization_servers": [base],
+            "scopes_supported": SCOPES,
+            "bearer_methods_supported": ["header"],
+            "resource_documentation": f"{base}/docs",
+        }
+    )
+
+
+def authorization_server_metadata(request: Request) -> JSONResponse:
+    base = _base(request)
+    return JSONResponse(
+        {
+            "issuer": base,
+            "authorization_endpoint": f"{base}/oauth/authorize",
+            "token_endpoint": f"{base}/oauth/token",
+            "registration_endpoint": f"{base}/oauth/register",
+            "scopes_supported": SCOPES,
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
+            "authorization_response_iss_parameter_supported": True,
+            "service_documentation": f"{base}/docs",
+        }
+    )
+
+
+async def register_client(request: Request) -> Response:
+    """Dynamic Client Registration (RFC 7591) sederhana."""
+    try:
+        body: Any = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_client_metadata"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "invalid_client_metadata"}, status_code=400)
+
+    redirect_uris = body.get("redirect_uris")
+    if not isinstance(redirect_uris, list) or not redirect_uris:
+        return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+    for uri in redirect_uris:
+        if not isinstance(uri, str):
+            return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+        parsed = urlparse(uri)
+        if parsed.scheme not in ("https", "http"):
+            return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+
+    client_id = "edc_" + secrets.token_urlsafe(16)
+    token_auth = body.get("token_endpoint_auth_method", "none")
+    client_secret = secrets.token_urlsafe(32) if token_auth == "client_secret_post" else ""
+
+    with db.tx() as conn:
+        conn.execute(
+            "INSERT INTO oauth_clients (client_id, client_secret, redirect_uris, client_name, created_at)"
+            " VALUES (?,?,?,?,?)",
+            (
+                client_id,
+                client_secret,
+                json.dumps(redirect_uris),
+                str(body.get("client_name", ""))[:120],
+                db.now(),
+            ),
+        )
+
+    payload = {
+        "client_id": client_id,
+        "client_id_issued_at": int(time.time()),
+        "redirect_uris": redirect_uris,
+        "client_name": str(body.get("client_name", ""))[:120],
+        "token_endpoint_auth_method": token_auth,
+        "grant_types": ["authorization_code"],
+        "response_types": ["code"],
+    }
+    if client_secret:
+        payload["client_secret"] = client_secret
+        payload["client_secret_expires_at"] = 0
+    return JSONResponse(payload, status_code=201)
+
+
+def _client(client_id: str) -> Any:
+    return db.q1("SELECT * FROM oauth_clients WHERE client_id = ?", (client_id,))
+
+
+def _consent_page(
+    request: Request,
+    client: Any,
+    redirect_uri: str,
+    state: str,
+    code_challenge: str,
+    scope: str,
+    resource: str,
+    user_email: str,
+    error: str = "",
+) -> HTMLResponse:
+    params = {
+        "client_id": client["client_id"],
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "scope": scope,
+        "resource": resource,
+    }
+    hidden = "".join(
+        f'<input type="hidden" name="{k}" value="{_esc(v)}">' for k, v in params.items() if v
+    )
+    err = f'<p class="err">{_esc(error)}</p>' if error else ""
+    html = f"""<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Izinkan akses MCP</title>
+<style>
+ body{{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0f1115;color:#e7e9ee;
+      display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}}
+ .card{{max-width:520px;width:100%;background:#171a21;border:1px solid #262b36;border-radius:16px;padding:28px}}
+ h1{{font-size:20px;margin:0 0 8px}} p{{color:#a9b0bf;line-height:1.55;margin:8px 0}}
+ .scope{{font-family:ui-monospace,Consolas,monospace;background:#0f1115;border:1px solid #262b36;
+        border-radius:8px;padding:10px;color:#9ad0ff;font-size:13px}}
+ .row{{display:flex;gap:10px;margin-top:20px}}
+ button{{flex:1;padding:12px;border-radius:10px;border:1px solid #2f7cf6;background:#2f7cf6;color:#fff;
+        font-size:14px;font-weight:600;cursor:pointer}}
+ button.deny{{background:transparent;border-color:#3a4150;color:#c3c9d6}}
+ .err{{color:#ff8f8f}} .who{{color:#7fe0a8;font-family:ui-monospace,Consolas,monospace;font-size:13px}}
+</style></head><body><div class="card">
+<h1>Izinkan akses ke EdLink MCP</h1>
+<p>Aplikasi <strong>{_esc(client["client_name"] or client["client_id"])}</strong> meminta akses ke akun EdLink-mu.</p>
+<p class="who">login sebagai {_esc(user_email)}</p>
+{err}
+<p>Scope yang diminta:</p><div class="scope">{_esc(scope or "edlink.read")}</div>
+<form method="post" action="/oauth/authorize">
+ {hidden}
+ <div class="row">
+  <button type="submit" name="decision" value="approve">Izinkan</button>
+  <button type="submit" name="decision" value="deny" class="deny">Tolak</button>
+ </div>
+</form>
+</div></body></html>"""
+    return HTMLResponse(html)
+
+
+def _esc(value: Any) -> str:
+    import html as html_lib
+
+    return html_lib.escape(str(value or ""), quote=True)
+
+
+def _redirect_error(redirect_uri: str, state: str, error: str, description: str) -> RedirectResponse:
+    params = {"error": error, "error_description": description, "state": state}
+    sep = "&" if "?" in redirect_uri else "?"
+    return RedirectResponse(f"{redirect_uri}{sep}{urlencode(params)}", status_code=302)
+
+
+async def authorize(request: Request, session_user: Any) -> Response:
+    if request.method == "GET":
+        params = request.query_params
+    else:
+        form = await request.form()
+        params = form
+
+    client_id = str(params.get("client_id") or "")
+    redirect_uri = str(params.get("redirect_uri") or "")
+    state = str(params.get("state") or "")
+    code_challenge = str(params.get("code_challenge") or "")
+    challenge_method = str(params.get("code_challenge_method") or "S256")
+    scope = str(params.get("scope") or "edlink.read")
+    resource = str(params.get("resource") or "")
+
+    client = _client(client_id)
+    if client is None:
+        return JSONResponse({"error": "invalid_client"}, status_code=400)
+
+    allowed = json.loads(client["redirect_uris"] or "[]")
+    if redirect_uri not in allowed:
+        return JSONResponse({"error": "invalid_redirect_uri"}, status_code=400)
+
+    if not code_challenge or challenge_method != "S256":
+        return _redirect_error(redirect_uri, state, "invalid_request", "PKCE S256 wajib")
+
+    if not session_user:
+        return RedirectResponse("/login?next=" + _esc(request.url.path + "?" + request.url.query), status_code=302)
+
+    if request.method == "GET":
+        return _consent_page(
+            request, client, redirect_uri, state, code_challenge, scope, resource, session_user["email"]
+        )
+
+    decision = str(params.get("decision") or "")
+    if decision != "approve":
+        return _redirect_error(redirect_uri, state, "access_denied", "user menolak")
+
+    code = secrets.token_urlsafe(32)
+    with db.tx() as conn:
+        conn.execute(
+            "INSERT INTO oauth_authorization_codes"
+            " (code, client_id, user_id, redirect_uri, code_challenge, resource, scope, created_at, expires_at, used)"
+            " VALUES (?,?,?,?,?,?,?,?,?,0)",
+            (
+                security.sha256_hex(code),
+                client_id,
+                session_user["user_id"],
+                redirect_uri,
+                code_challenge,
+                resource,
+                scope,
+                db.now(),
+                db.now() + security.CODE_TTL,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO audit_events (ts, user_id, action, detail, ip) VALUES (?,?,?,?,?)",
+            (db.now(), session_user["user_id"], "oauth.authorize", client_id[:80], request.client.host if request.client else ""),
+        )
+
+    params_out = {"code": code, "state": state, "iss": _base(request)}
+    sep = "&" if "?" in redirect_uri else "?"
+    return RedirectResponse(f"{redirect_uri}{sep}{urlencode(params_out)}", status_code=302)
+
+
+async def token(request: Request) -> Response:
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"error": "invalid_request"}, status_code=400)
+
+    if str(form.get("grant_type") or "") != "authorization_code":
+        return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+
+    code = str(form.get("code") or "")
+    verifier = str(form.get("code_verifier") or "")
+    client_id = str(form.get("client_id") or "")
+    redirect_uri = str(form.get("redirect_uri") or "")
+
+    row = db.q1(
+        "SELECT * FROM oauth_authorization_codes WHERE code = ?",
+        (security.sha256_hex(code),),
+    )
+    if row is None or row["used"] or row["expires_at"] < db.now():
+        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+    if client_id and row["client_id"] != client_id:
+        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+    if redirect_uri and row["redirect_uri"] != redirect_uri:
+        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+    if not security.verify_pkce(verifier, row["code_challenge"]):
+        return JSONResponse({"error": "invalid_grant", "error_description": "PKCE gagal"}, status_code=400)
+
+    with db.tx() as conn:
+        conn.execute("UPDATE oauth_authorization_codes SET used=1 WHERE code=?", (row["code"],))
+
+    raw = security.create_mcp_token(
+        row["user_id"], client_id=row["client_id"], name="oauth:" + (row["client_id"] or "")[:40]
+    )
+    return JSONResponse(
+        {
+            "access_token": raw,
+            "token_type": "Bearer",
+            "expires_in": security.MCP_TOKEN_TTL,
+            "scope": row["scope"] or "edlink.read",
+        }
+    )
