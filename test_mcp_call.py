@@ -1,6 +1,7 @@
 """Test: panggil edlink_login_status via MCP client (tanpa kredensial -> harus error bersih)."""
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -18,7 +19,12 @@ async def main() -> None:
             result = await session.call_tool("edlink_login_status", {})
             print("is_error:", result.isError)
             for block in result.content:
-                print(block.text if hasattr(block, "text") else block)
+                text = block.text if hasattr(block, "text") else str(block)
+                # Jangan pernah mencetak token/preview atau data akun di output test.
+                text = re.sub(r'("token_preview"\s*:\s*")[^"]*(")', r"\1***\2", text)
+                text = re.sub(r'("user"\s*:\s*")[^"]*(")', r"\1***\2", text)
+                text = re.sub(r'("email"\s*:\s*")[^"]*(")', r"\1***\2", text)
+                print(text)
 
 
 asyncio.run(main())

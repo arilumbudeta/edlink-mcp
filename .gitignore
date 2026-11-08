@@ -1,6 +1,10 @@
 # kredensial & token — JANGAN pernah commit
 config.json
 token_cache.json
+.env
+.env.*
+*.pem
+*.key
 
 # python
 __pycache__/
