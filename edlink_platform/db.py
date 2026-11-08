@@ -139,6 +139,8 @@ def connect() -> sqlite3.Connection:
 def init_db() -> None:
     conn = connect()
     conn.executescript(SCHEMA)
+    # audit_events dipakai untuk forensik, bukan arsip permanen. Simpan 90 hari.
+    conn.execute("DELETE FROM audit_events WHERE ts < ?", (now() - 90 * 86400,))
 
 
 @contextmanager

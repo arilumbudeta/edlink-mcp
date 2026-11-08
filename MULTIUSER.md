@@ -167,6 +167,30 @@ terpakai di mode platform karena auth dipegang `IdentityMiddleware`.
 
 ## Backup dan restore
 
+Backup otomatis harian sudah tersedia sebagai timer systemd:
+
+```bash
+sudo install -m 644 deploy/edlink-backup.service /etc/systemd/system/
+sudo install -m 644 deploy/edlink-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now edlink-backup.timer
+systemctl list-timers edlink-backup.timer
+```
+
+Backup manual atau untuk mengecek hasilnya:
+
+```bash
+bash deploy/backup_platform.sh              # ke ./backups
+bash deploy/backup_platform.sh /data/backup # folder lain
+EDLINK_PLATFORM_BACKUP_KEEP=30 bash deploy/backup_platform.sh
+```
+
+Skrip memakai SQLite online backup API, jadi aman dijalankan saat service
+hidup. Setiap pasangan `platform-<stamp>.db` + `master-<stamp>.key` disimpan
+dengan mode 600 pada key, lalu retensi memangkas sisanya.
+
+Setara dengan perintah manual:
+
 ```bash
 # backup (konsisten walau service jalan)
 sqlite3 /data/workspace/edlink-mcp/data/platform.db ".backup '/data/backup/platform-$(date +%F).db'"

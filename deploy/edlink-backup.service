@@ -1,0 +1,16 @@
+[Unit]
+Description=EdLink MCP platform backup (SQLite + master key)
+Documentation=https://github.com/arilumbudeta/edlink-mcp
+After=edlink-platform.service
+Wants=edlink-platform.service
+
+[Service]
+Type=oneshot
+User=user
+Group=user
+WorkingDirectory=/data/workspace/edlink-mcp
+Environment=EDLINK_PLATFORM_BACKUP_KEEP=14
+ExecStart=/bin/bash /data/workspace/edlink-mcp/deploy/backup_platform.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

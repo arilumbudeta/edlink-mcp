@@ -14,6 +14,9 @@ platform.db-shm
 platform.db-wal
 master.key
 
+# backup lokal (database + key) tidak boleh masuk git
+backups/
+
 # python
 __pycache__/
 *.pyc

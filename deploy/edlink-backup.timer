@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly EdLink MCP platform backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=600
+Unit=edlink-backup.service
+
+[Install]
+WantedBy=timers.target
