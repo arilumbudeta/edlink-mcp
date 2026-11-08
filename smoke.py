@@ -1,6 +1,9 @@
-from mcp.server.mcpserver import MCPServer
+try:  # mcp 1.x
+    from mcp.server.fastmcp import FastMCP as _MCPServer
+except ImportError:  # mcp 2.x
+    from mcp.server.mcpserver import MCPServer as _MCPServer
 
-mcp = MCPServer("smoke", dependencies=["mcp[cli]==2.3.0"])
+mcp = _MCPServer("smoke")
 
 
 @mcp.tool()

@@ -15,7 +15,7 @@ async def main() -> None:
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.call_tool("edlink_login_status", {})
-            print("is_error:", result.is_error)
+            print("is_error:", result.isError)
             for block in result.content:
                 print(block.text if hasattr(block, "text") else block)
 
