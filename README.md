@@ -14,7 +14,7 @@ perantara yang menyimpan kredensial.
 ![EdLink](https://img.shields.io/badge/EdLink-reverse--engineered-0A66C2?style=for-the-badge)
 ![Stars](https://img.shields.io/github/stars/arilumbudeta/edlink-mcp?style=for-the-badge&logo=github&color=FFD700)
 
-> ⭐ **Level 6 / 7** — `[██████████████████░░░] 86%`
+> **Level 6 / 7** — `[██████████████████░░░] 86%`
 > Auto-pilot tugas sudah nyala. Berikutnya: kuis interaktif & proctoring.
 
 ---
@@ -61,22 +61,22 @@ Yang berhasil dipetakan:
 
 ---
 
-## ✨ Fitur
+## Fitur
 
-- 🔎 **Lihat tugas terbuka** + deadline + kelas.
-- 📄 **Detail tugas** — instruksi lengkap, lampiran dosen, deadline, status submission.
-- 📝 **Cek jawaban sendiri** — sudah submit atau belum, jawaban apa yang terkirim.
-- 🚀 **Kirim tugas** — `set-answer` untuk submission baru, `edit-answer` untuk kirim ulang.
-- 📎 **Upload lampiran** — media pribadi EdLink atau Google Drive EdLink.
-- 🤖 **Auto-pilot** — agent mengerjakan lalu mengirim tugas dalam satu alur.
-- 🔗 **Login link-based** — OAuth Google lewat link, atau manual email + password.
-- 🧭 **Jadwal & kelas** — hari ini, bulanan, daftar kelas.
-- 🔔 **Notifikasi** — semua atau hanya yang belum dibaca.
-- 🛠️ **API explorer** — `edlink_api` buat endpoint yang belum dipetakan.
+- **Lihat tugas terbuka** + deadline + kelas.
+- **Detail tugas** — instruksi lengkap, lampiran dosen, deadline, status submission.
+- **Cek jawaban sendiri** — sudah submit atau belum, jawaban apa yang terkirim.
+- **Kirim tugas** — `set-answer` untuk submission baru, `edit-answer` untuk kirim ulang.
+- **Upload lampiran** — media pribadi EdLink atau Google Drive EdLink.
+- **Auto-pilot** — agent mengerjakan lalu mengirim tugas dalam satu alur.
+- **Login link-based** — OAuth Google lewat link, atau manual email + password.
+- **Jadwal & kelas** — hari ini, bulanan, daftar kelas.
+- **Notifikasi** — semua atau hanya yang belum dibaca.
+- **API explorer** — `edlink_api` buat endpoint yang belum dipetakan.
 
 ---
 
-## 🧰 Tools
+## Tools
 
 | Tool | Fungsi |
 |---|---|
@@ -130,7 +130,7 @@ Yang berhasil dipetakan:
 
 ---
 
-## 🚀 Setup pertama kali (interaktif)
+## Setup pertama kali (interaktif)
 
 1. Install dependencies:
 
@@ -190,7 +190,7 @@ Yang berhasil dipetakan:
 
 ---
 
-## 🤖 Auto-pilot: "kerjakan tugas terbaru dan send"
+## Auto-pilot: "kerjakan tugas terbaru dan send"
 
 Cukup bilang ke agent:
 
@@ -241,7 +241,7 @@ Saat user bilang "kerjakan tugas terbaru dan send":
 
 ---
 
-## 📦 Daftarkan ke client MCP
+## Daftarkan ke client MCP
 
 ### OpenCode
 
@@ -304,7 +304,7 @@ Format sama: command `python`, argumen path `edlink_mcp.py`, transport stdio.
 
 ---
 
-## 🔐 Mode auth
+## Mode auth
 
 1. **Mode token** — `config.json` berisi `"token"`. Cocok untuk OAuth Google.
 2. **Mode password** — `config.json` berisi `"email"` + `"password"`. Login ulang otomatis
@@ -336,34 +336,38 @@ Kalau token expired dan kamu tidak mau lewat `edlink_login_oauth_link()`:
 
 ---
 
-## ⭐ Star Progression
+## Star Progression
 
-| Level | Bintang | Kemampuan | Status |
-|---|---|---|---|
-| 1 | ⭐ | Auth + baca tugas terbuka | ✅ |
-| 2 | ⭐⭐ | Jadwal harian & bulanan | ✅ |
-| 3 | ⭐⭐⭐ | Kelas + notifikasi + API explorer | ✅ |
-| 4 | ⭐⭐⭐⭐ | Detail tugas + submission gate | ✅ |
-| 5 | ⭐⭐⭐⭐⭐ | Kirim & edit tugas + lampiran | ✅ |
-| 6 | ⭐⭐⭐⭐⭐⭐ | Auto-pilot tugas (kerjakan + kirim) | ✅ |
-| 7 | ⭐⭐⭐⭐⭐⭐⭐ | Kuis interaktif + proctoring | 🚧 |
+[![Star History Chart](https://api.star-history.com/svg?repos=arilumbudeta/edlink-mcp&type=Date)](https://www.star-history.com/#arilumbudeta/edlink-mcp&Date)
+
+Grafik di atas di-generate oleh [star-history.com](https://www.star-history.com/).
+
+| Level | Kemampuan | Status |
+|---|---|---|
+| 1 | Auth + baca tugas terbuka | Selesai |
+| 2 | Jadwal harian & bulanan | Selesai |
+| 3 | Kelas + notifikasi + API explorer | Selesai |
+| 4 | Detail tugas + submission gate | Selesai |
+| 5 | Kirim & edit tugas + lampiran | Selesai |
+| 6 | Auto-pilot tugas (kerjakan + kirim) | Selesai |
+| 7 | Kuis interaktif + proctoring | Belum |
 
 **Progress:** `[██████████████████░░░] 86%` → level 7 belum.
 
 Cara naik level:
 
-- ⭐ → ⭐⭐: pakai `edlink_jadwal_hari_ini()` tiap hari.
-- ⭐⭐ → ⭐⭐⭐: cek `edlink_kelas()` + `edlink_notifikasi()`.
-- ⭐⭐⭐ → ⭐⭐⭐⭐: baca `edlink_tugas_detail()` sebelum mengerjakan.
-- ⭐⭐⭐⭐ → ⭐⭐⭐⭐⭐: kirim satu tugas lewat `edlink_send_tugas()`.
-- ⭐⭐⭐⭐⭐ → ⭐⭐⭐⭐⭐⭐: pakai **frasa pemicu** di bagian auto-pilot.
-- ⭐⭐⭐⭐⭐⭐ → ⭐⭐⭐⭐⭐⭐⭐: tunggu update kuis interaktif.
+- Awalnya cukup `edlink_jadwal_hari_ini()` tiap hari.
+- Lanjut cek `edlink_kelas()` + `edlink_notifikasi()`.
+- Sebelum mengerjakan, baca `edlink_tugas_detail()`.
+- Kirim satu tugas lewat `edlink_send_tugas()`.
+- Pakai **frasa pemicu** di bagian auto-pilot.
+- Level terakhir menunggu update kuis interaktif.
 
-Kalau repo ini berguna, kasih ⭐ di GitHub — star-nya yang naikin level berikutnya.
+Kalau repo ini berguna, kasih star di GitHub — star-nya yang naikin level berikutnya.
 
 ---
 
-## 🧪 Test cepat
+## Test cepat
 
 ```bash
 python -c "import edlink_mcp; print('import ok')"
@@ -379,7 +383,7 @@ Setelah terdaftar, tanya agent:
 
 ---
 
-## 🗺️ Peta endpoint hasil reverse engineering
+## Peta endpoint hasil reverse engineering
 
 ```text
 site/login                         -> email/password login
@@ -408,7 +412,7 @@ Semua endpoint di atas kebanyakan **POST**. `edlink_api` default `method="AUTO"`
 
 ---
 
-## 🔒 Catatan keamanan
+## Catatan keamanan
 
 - Dua file lokal — `config.json` dan `token_cache.json` — menyimpan kredensial;
   **jangan di-commit** (sudah dibantu `.gitignore`).

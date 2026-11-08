@@ -89,7 +89,7 @@ Entry baru, sejajar dengan `edlink`:
    `HKCU:\Environment` tidak kenal `gh`; fix instan
    `$env:Path += ';C:\Users\Lumi\AppData\Local\Programs\gh-cli'` atau buka
    window baru (dari dalam ZCode: aplikasi ZCode-nya harus di-restart dulu).
-7. **Sweep rahasia pra-commit** — grep token `b0ce2872…` di seluruh direktori:
+7. **Sweep rahasia pra-commit** — grep token EdLink di seluruh direktori:
    hanya ada di `config.json` + `token_cache.json` (keduanya di-ignore). Tidak
    ada Bearer/hex di kode, README, atau laporan. `config.example.json` berisi
    placeholder saja.
