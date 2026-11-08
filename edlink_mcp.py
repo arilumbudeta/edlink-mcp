@@ -637,6 +637,27 @@ def _media_items(data: Any) -> list[dict[str, Any]]:
 
 def _setup_prompt() -> dict[str, Any]:
     """Payload pertama-install: tanya manual vs OAuth, plus link OAuth."""
+    platform_user = _platform_user_id()
+    if platform_user:
+        # Mode platform: kredensial tidak boleh masuk chat, dan tidak ada
+        # config.json bersama. Satu-satunya jalur adalah dashboard per akun.
+        base = os.environ.get("EDLINK_PLATFORM_BASE_URL", "").rstrip("/")
+        dashboard = f"{base}/dashboard" if base else "dashboard platform"
+        return {
+            "perlu_setup": True,
+            "metode": "platform",
+            "pesan": "Akun platform ini belum terhubung ke akun EdLink.",
+            "langkah": [
+                f"Buka {dashboard} di browser dan login.",
+                "Tempel token EdLink (129 karakter dari DevTools edlink.id), "
+                "atau isi email + password EdLink.",
+                "Kembali ke sini, lalu panggil edlink_setup_status() lagi.",
+            ],
+            "catatan": (
+                "Jangan menempel token atau password EdLink di chat. Halaman dashboard "
+                "menyimpannya terenkripsi untuk akun ini saja."
+            ),
+        }
     return {
         "perlu_setup": True,
         "pesan": "Kredensial EdLink belum ada. Pilih metode login dulu.",
@@ -1191,6 +1212,16 @@ async def edlink_setup_token(token: str) -> str:
     except Exception as exc:  # noqa: BLE001 — token dari user, lapor apa adanya
         return json.dumps({"ok": False, "error": f"Token tidak valid: {exc}"}, ensure_ascii=False)
     name = profile.get("name") if isinstance(profile, dict) else None
+    platform_user = _platform_user_id()
+    if platform_user:
+        from edlink_platform import store
+
+        store.save_connection(platform_user, "token", token=token)
+        _write_token_cache(token, extra={"mode": "token"})
+        return json.dumps(
+            {"ok": True, "metode": "token", "user": name, "penyimpanan": "akun platform"},
+            ensure_ascii=False,
+        )
     CONFIG_PATH.write_text(
         json.dumps(
             {
@@ -1234,6 +1265,22 @@ async def edlink_setup_manual(email: str, password: str) -> str:
         token = _extract_token(result)
     except Exception as exc:  # noqa: BLE001 — kredensial dari user, lapor apa adanya
         return json.dumps({"ok": False, "error": f"Login manual gagal: {exc}"}, ensure_ascii=False)
+    platform_user = _platform_user_id()
+    if platform_user:
+        from edlink_platform import store
+
+        store.save_connection(
+            platform_user,
+            "password",
+            email=email,
+            password=password,
+            device=_load_device(),
+        )
+        _write_token_cache(token, extra={"mode": "password"})
+        return json.dumps(
+            {"ok": True, "metode": "password", "email": email, "penyimpanan": "akun platform"},
+            ensure_ascii=False,
+        )
     CONFIG_PATH.write_text(
         json.dumps(
             {
@@ -1247,13 +1294,12 @@ async def edlink_setup_manual(email: str, password: str) -> str:
         encoding="utf-8",
     )
     _write_token_cache(token, extra={"mode": "password"})
-    masked = token[:8] + "..." if len(token) > 8 else token
     return json.dumps(
         {
             "ok": True,
             "metode": "password",
             "email": email,
-            "token_preview": masked,
+            "token_tersimpan": True,
             "config": str(CONFIG_PATH),
         },
         ensure_ascii=False,

@@ -297,5 +297,36 @@ class RefreshTokenTests(unittest.TestCase):
         self.assertIsNone(security.refresh_token_row(second))
 
 
+class SetupPromptTests(unittest.TestCase):
+    """Prompt setup harus berbeda di mode platform: tanpa config.json bersama."""
+
+    def tearDown(self) -> None:
+        os.environ.pop("EDLINK_PLATFORM_BASE_URL", None)
+
+    def test_stdio_prompt_unchanged(self) -> None:
+        import edlink_mcp
+
+        prompt = edlink_mcp._setup_prompt()
+        self.assertTrue(prompt["perlu_setup"])
+        self.assertIn("pilih_salah_satu", prompt)
+        self.assertEqual(len(prompt["pilih_salah_satu"]), 2)
+
+    def test_platform_prompt_points_to_dashboard(self) -> None:
+        import edlink_mcp
+
+        os.environ["EDLINK_PLATFORM_BASE_URL"] = "https://example.test"
+        ident = identity.Identity(user_id="usr_setup", email="s@example.test", via="mcp")
+        token = identity.set_identity(ident)
+        try:
+            prompt = edlink_mcp._setup_prompt()
+        finally:
+            identity.reset_identity(token)
+
+        self.assertEqual(prompt["metode"], "platform")
+        self.assertNotIn("pilih_salah_satu", prompt)
+        self.assertIn("https://example.test/dashboard", " ".join(prompt["langkah"]))
+        self.assertIn("Jangan menempel", prompt["catatan"])
+
+
 if __name__ == "__main__":
     unittest.main()

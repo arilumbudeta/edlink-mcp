@@ -37,6 +37,17 @@ Identitas per request:
 
 Tool **tidak pernah** menerima `user_id` dari argumen. Skema 18 tool tidak berubah.
 
+Di mode platform, tool setup ikut menyesuaikan:
+
+- `edlink_setup_status` mengembalikan instruksi dashboard, bukan pilihan
+  `edlink_setup_manual` / `edlink_setup_oauth` (yang menulis `config.json`
+  bersama di folder repo).
+- `edlink_setup_token` dan `edlink_setup_manual` menyimpan ke
+  `edlink_connections` milik user yang sedang memanggil, terenkripsi. Tidak ada
+  `config.json` yang ditulis dan tidak ada path server yang dibocorkan.
+- Respons setup tidak lagi memuat potongan token. Token asli tidak pernah
+  kembali ke chat, log, atau model.
+
 ## Alur user baru
 
 1. Buka `https://<host>/signup`, daftar dengan email + password (min 10 karakter).
