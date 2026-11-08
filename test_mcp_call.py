@@ -2,11 +2,12 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-SERVER = r"C:\Users\Lumi\Documents\EDLINK\edlink_mcp.py"
+SERVER = str(Path(__file__).resolve().with_name("edlink_mcp.py"))
 
 
 async def main() -> None:

@@ -795,7 +795,7 @@ async def edlink_media(cari: str = "", batas: int = 10) -> str:
 async def edlink_upload_file(path: str, ke_drive: bool = False, parent_id: str | None = None) -> str:
     """Upload berkas untuk lampiran tugas. Kembalikan media_id yang dipakai di edlink_send_tugas.
 
-    path: path file lokal (contoh C:\\Users\\Lumi\\Documents\\tugas.pdf).
+    path: path file lokal (contoh C:\\path\\ke\\tugas.pdf).
     ke_drive: True -> upload ke Google Drive EdLink (drive/upload);
               False (default) -> media pribadi EdLink (media/upload).
     parent_id: opsional, folder tujuan kalau ke_drive=True.

@@ -1,10 +1,12 @@
-"""Unduh semua materi EdLink ke C:\\Users\\Lumi\\Documents\\Kuliah,
-satu folder per sesi, mengikuti konvensi lokal yang sudah ada.
+"""Unduh semua materi EdLink ke folder Kuliah (default: ~/Documents/Kuliah,
+bisa dioverride lewat env EDLINK_KULIAH_DIR), satu folder per sesi,
+mengikuti konvensi lokal yang sudah ada.
 
 Sumber token: token_cache.json (sama dengan yang dipakai edlink_mcp.py).
 Materi diunduh dari file.link (GCS assets-edlink), fallback Bearer bila 403.
 """
 import json
+import os
 import re
 import sys
 import time
@@ -12,8 +14,10 @@ from pathlib import Path
 
 import httpx
 
-EDLINK_DIR = Path(r"C:\Users\Lumi\Documents\EDLINK")
-KULIAH = Path(r"C:\Users\Lumi\Documents\Kuliah")
+EDLINK_DIR = Path(__file__).resolve().parent
+KULIAH = Path(
+    os.environ.get("EDLINK_KULIAH_DIR") or (Path.home() / "Documents" / "Kuliah")
+).expanduser()
 API_BASE = "https://api.edlink.id/api/v1.4"
 
 # kelas -> (nama folder lokal, template folder sesi)

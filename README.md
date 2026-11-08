@@ -250,7 +250,7 @@ Edit `~/.config/opencode/opencode.json`:
     "servers": {
       "edlink": {
         "type": "local",
-        "command": ["python", "C:\\Users\\Lumi\\Documents\\EDLINK\\edlink_mcp.py"]
+        "command": ["python", "C:\\path\\ke\\edlink-mcp\\edlink_mcp.py"]
       }
     }
   }
@@ -267,7 +267,7 @@ Entry di `~/.zcode/cli/config.json`:
     "servers": {
       "edlink": {
         "command": "python",
-        "args": ["C:\\Users\\Lumi\\Documents\\EDLINK\\edlink_mcp.py"]
+        "args": ["C:\\path\\ke\\edlink-mcp\\edlink_mcp.py"]
       }
     }
   }
@@ -289,7 +289,7 @@ Mau pakai env vars daripada `config.json`? Tambahkan:
   "mcpServers": {
     "edlink": {
       "command": "python",
-      "args": ["C:\\Users\\Lumi\\Documents\\EDLINK\\edlink_mcp.py"]
+      "args": ["C:\\path\\ke\\edlink-mcp\\edlink_mcp.py"]
     }
   }
 }

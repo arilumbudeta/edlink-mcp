@@ -12,7 +12,7 @@ GitHub. Tidak ada perubahan pada logika server EdLink.
 |---|---|
 | Repo GitHub | **https://github.com/arilumbudeta/edlink-mcp** — public, branch `main` |
 | Commit pertama | `f763eac` — "Initial commit: EdLink MCP server", 15 file |
-| `gh` CLI | v2.103.3 di `C:\Users\Lumi\AppData\Local\Programs\gh-cli\gh.exe`, masuk user PATH |
+| `gh` CLI | v2.103.3 di `%LOCALAPPDATA%\Programs\gh-cli\gh.exe`, masuk user PATH |
 | Login OAuth | Device flow sukses — dua akun di keyring: **`arilumbudeta` (aktif)** dan `ilmnce` |
 | MCP server `github` | Terdaftar di `~/.zcode/cli/config.json` → `mcp.servers.github`, koneksi live terverifikasi |
 | File sensitif | `config.json` + `token_cache.json` **tidak ter-track** — diverifikasi via `git ls-files` |
@@ -87,7 +87,7 @@ Entry baru, sejajar dengan `edlink`:
    yang keluar berubah. Ambil token akun spesifik: `gh auth token -u <akun>`.
 6. **PATH tidak instan** — jendela shell yang dibuka sebelum perubahan
    `HKCU:\Environment` tidak kenal `gh`; fix instan
-   `$env:Path += ';C:\Users\Lumi\AppData\Local\Programs\gh-cli'` atau buka
+   `$env:Path += ";$env:LOCALAPPDATA\Programs\gh-cli"` atau buka
    window baru (dari dalam ZCode: aplikasi ZCode-nya harus di-restart dulu).
 7. **Sweep rahasia pra-commit** — grep token EdLink di seluruh direktori:
    hanya ada di `config.json` + `token_cache.json` (keduanya di-ignore). Tidak

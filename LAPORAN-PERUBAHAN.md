@@ -1,7 +1,7 @@
 # LAPORAN PERUBAHAN — Sesi Sinkronisasi Materi (9 November 2026)
 
 Laporan ini mendokumentasikan apa yang **ditambahkan** dan apa yang **tidak disentuh**
-pada direktori `C:\Users\Lumi\Documents\EDLINK` selama sesi unduh materi EdLink,
+pada direktori `C:\path\ke\EDLINK` selama sesi unduh materi EdLink,
 plus temuan teknis API yang relevan untuk pengembangan MCP ke depan.
 
 ---
@@ -10,7 +10,7 @@ plus temuan teknis API yang relevan untuk pengembangan MCP ke depan.
 
 ### `edlink_sync_materi.py` (baru)
 
-Script unduh massal materi EdLink ke `C:\Users\Lumi\Documents\Kuliah`, satu folder
+Script unduh massal materi EdLink ke `C:\path\ke\Kuliah` (default `~/Documents/Kuliah`), satu folder
 per sesi. **Bukan bagian dari MCP server** — script terpisah yang memakai pola yang
 sama dengan `edlink_mcp.py`.
 
@@ -97,7 +97,7 @@ tidak disentuh.
 ## 5. CARA PAKAI ULANG
 
 ```powershell
-python -I C:\Users\Lumi\Documents\EDLINK\edlink_sync_materi.py
+python -I C:\path\ke\EDLINK\edlink_sync_materi.py
 ```
 
 Idempoten: file yang sudah ada di-skip, hanya materi baru yang diunduh.
