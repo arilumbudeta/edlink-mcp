@@ -1,8 +1,8 @@
 # EdLink MCP Server
 
 **MCP server untuk EdLink (edlink.id / SEVIMA)** — biar agent coding dan ChatGPT bisa lihat
-tugas, jadwal, kelas, notifikasi, **mengerjakan tugas, dan mengirimnya** langsung dari akun
-masing-masing.
+tugas, jadwal, kelas, notifikasi, **membaca materi kuliah**, **mengerjakan tugas, dan
+mengirimnya** langsung dari akun masing-masing.
 
 Ada dua bentuk deployment:
 
@@ -153,6 +153,9 @@ Yang berhasil dipetakan:
 - **Login link-based** — OAuth Google lewat link, atau manual email + password.
 - **Jadwal & kelas** — hari ini, bulanan, daftar kelas.
 - **Notifikasi** — semua atau hanya yang belum dibaca.
+- **Materi kuliah jadi teks** — daftar materi per pertemuan, unduh berkasnya di server,
+  lalu balikin isinya sebagai teks. Model tidak pernah membuka link, jadi tidak kena
+  blokir "can only open links from the conversation" di Claude.
 - **API explorer** — `edlink_api` buat endpoint yang belum dipetakan.
 - **Platform multi-user** — tiap orang daftar sendiri, koneksi EdLink terpisah dan
   terenkripsi, admin panel untuk suspend/cabut token.
@@ -177,6 +180,8 @@ Yang berhasil dipetakan:
 | `edlink_jadwal_hari_ini()` | Jadwal kuliah hari ini |
 | `edlink_jadwal_bulanan(bulan, tahun)` | Jadwal bulanan |
 | `edlink_kelas()` | Daftar kelas yang diikuti |
+| `edlink_materi(kelas, batas)` | Materi per pertemuan + `media_id` tiap berkas, termasuk UTS/UAS |
+| `edlink_materi_baca(materi_id, kelas, halaman, simpan)` | Unduh satu berkas di server lalu balikin isinya sebagai teks |
 | `edlink_notifikasi(hanya_belum_dibaca)` | Notifikasi |
 | `edlink_api(path, method, body)` | Panggil endpoint API apa pun (advanced, `method="AUTO"` default) |
 | `edlink_setup_status()` | Cek kredensial; kalau belum ada, tampilkan pilihan login |
@@ -218,6 +223,65 @@ mengarahkan ke halaman dashboard, bukan meminta token lewat chat.
   ]
 }
 ```
+
+---
+
+## Materi kuliah: baca PDF, XLSX, PPTX, DOCX
+
+Dua tool baru ada karena satu masalah nyata: **model di sisi klien tidak boleh membuka
+URL eksternal**. Kalau kamu kasih link Google Cloud Storage berisi PDF, Claude menjawab
+*"Claude can only open links from the conversation or ones you approve"*, dan ChatGPT
+sering gagal di jaringan. Link-nya benar, yang tidak bisa adalah membukanya dari sisi model.
+
+Solusinya: unduhan dipindah ke server. Tool yang jalan di mesinmu (atau di VM platform)
+mengambil byte berkas, mengekstrak teksnya, lalu mengembalikan **teks polos**. Model tidak
+pernah menyentuh URL, jadi aturan klien tidak pernah kena.
+
+### Alur
+
+```text
+edlink_materi(kelas="logika")
+  -> daftar pertemuan + judul materi + media_id + ext + sumber link
+
+edlink_materi_baca(materi_id=40919015, kelas="logika", halaman="1-40")
+  -> { ok, nama, ext, ukuran_kb, total_halaman, teks }
+```
+
+`halaman` menerima rentang (`"1-15"`), satu halaman (`"3"`), atau gabungan
+(`"1-5,8"`). Default `"1-15"`. Hasil dipotong di 60.000 karakter supaya tidak
+membanjiri context; pakai rentang halaman untuk sisanya.
+
+### Format yang didukung
+
+| Format | Cara baca | Dependensi |
+|---|---|---|
+| PDF | `pypdf`, per halaman | `pypdf` |
+| XLSX | `openpyxl`, per sheet, tiap baris digabung jadi satu baris teks | `openpyxl` |
+| PPTX | XML di dalam zip (`ppt/slides/`) | stdlib |
+| DOCX | XML di dalam zip (`word/`) | stdlib |
+| lain | berkas tetap disimpan, tidak ada teks | — |
+
+`requirements.txt` sudah memuat `pypdf` dan `openpyxl`. Tanpa keduanya, berkas tetap
+terunduh dan tersimpan, tapi `teks` kosong dan ada catatan di `catatan`.
+
+### Pengamanan unduhan
+
+- **Allowlist host**, dicek di setiap hop redirect: `storage.googleapis.com`,
+  `drive.google.com`, `drive.usercontent.google.com`. Hanya HTTPS, port 443, tanpa
+  kredensial di URL.
+- **Header `Authorization` tidak pernah ikut** ke host unduhan. Token EdLink hanya
+  dikirim ke `api.edlink.id`.
+- **Magic bytes** diperiksa sebelum ekstraksi: `%PDF` untuk PDF, `PK` untuk
+  xlsx/pptx/docx, OLE header untuk `.ppt`. Mismatch = ditolak, bukan ditebak.
+- **Batas ukuran** 40 MB, redirect maksimal 5 hop.
+- **Halaman Drive interstitial** (`"file too large to scan"`) dilewati dengan mengirim
+  ulang form konfirmasinya, bukan dengan mematikan pemeriksaan host.
+- Di mode platform, berkas disimpan per user di
+  `EDLINK_PLATFORM_UPLOAD_DIR/<user_id>/materi/`, jadi tidak ada user yang bisa membaca
+  folder user lain. Set `simpan=False` kalau tidak mau ada salinan sama sekali.
+
+> Materi yang diunduh adalah dokumen milik dosen. Simpan hanya untuk keperluan belajar,
+> jangan disebar ulang.
 
 ---
 
@@ -524,8 +588,9 @@ integrasi ChatGPT ada di [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ```bash
 python -c "import edlink_mcp; print('import ok')"
-python test_mcp_smoke.py      # list semua tools
+python test_mcp_smoke.py      # list semua tools (harus 20)
 python test_mcp_call.py       # panggil edlink_login_status
+python -m unittest test_platform_unit -v   # 46 test helper + OAuth + store
 ```
 
 Setelah terdaftar, tanya agent:
@@ -533,6 +598,8 @@ Setelah terdaftar, tanya agent:
 - *"cek edlink, ada tugas gak?"*
 - *"kerjakan tugas terbaru dan send"*
 - *"jadwal hari ini apa?"*
+- *"daftar materi logika matematika"*
+- *"baca materi pertemuan 1, lalu rangkum"*
 
 ---
 
@@ -548,6 +615,8 @@ home/openassignmentsandquizes      -> daftar tugas/kuis terbuka
 home/today-schedule                -> jadwal hari ini
 home/monthly-schedule              -> jadwal bulanan
 group/academic-lists               -> daftar kelas
+group/detail/{id}                  -> detail kelas (nama, paralel, jadwal)
+sections/all/{groupId}             -> sesi per pertemuan + materials[].medias[].id
 notification/all                   -> notifikasi
 learningmaterials/detail/{id}      -> detail tugas + submissionGate
 lecturer-question/detail-answer/{id}      -> jawaban saya
@@ -562,6 +631,17 @@ quiz/start/{id}                    -> mulai kuis
 
 Semua endpoint di atas kebanyakan **POST**. `edlink_api` default `method="AUTO"`
 (coba POST dulu, fallback GET kalau route menolak).
+
+Beberapa catatan hasil pemetaan yang tidak kelihatan dari nama route:
+
+- `learningmaterials/all/{groupId}` **tidak ada** — selalu balas `code=3`
+  ("data tidak ditemukan"). Daftar materi ada di `sections/all/{groupId}`, di dalam
+  `materials[].medias[]`.
+- `site/login` menolak body yang punya field `device` (HTTP 500). Kirim
+  `{email, password}` saja. Token hasil login ada di `data.userToken.token`.
+- `media.file.link` menunjuk ke `storage.googleapis.com/assets-edlink/p/...`;
+  kalau ada, `media.values.downloadLink` menunjuk ke Google Drive. Dua-duanya
+  diunduh tanpa header `Authorization`.
 
 ---
 
