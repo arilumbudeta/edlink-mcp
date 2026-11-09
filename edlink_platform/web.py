@@ -232,8 +232,9 @@ def logout(request: Request) -> Response:
 def index(request: Request) -> Response:
     body = """<div class="card">
 <h1>EdLink MCP</h1>
-<p>Hubungkan akun EdLink-mu ke ChatGPT lewat MCP. Satu akun platform, satu akun EdLink,
-data terpisah dari pengguna lain.</p>
+<p>Hubungkan akun EdLink-mu ke chat agent apa pun yang mendukung MCP — ChatGPT, Claude,
+Cursor, OpenCode, dan lainnya. Satu akun platform, satu akun EdLink, data terpisah dari
+pengguna lain.</p>
 <p><a href="/signup">Daftar</a> · <a href="/login">Masuk</a> · <a href="/docs">Dokumentasi</a></p>
 </div>
 
@@ -243,10 +244,11 @@ data terpisah dari pengguna lain.</p>
  <li>Daftar akun platform dengan email + password.</li>
  <li>Di dashboard, hubungkan akun EdLink-mu dengan <strong>email + password EdLink</strong>
      (server yang login, tanpa DevTools).</li>
- <li>Salin URL MCP dari dashboard, lalu tambahkan sebagai custom MCP server di
-     <code>chatgpt.com/plugins</code>.</li>
- <li>Setujui halaman izin sekali. Setelah itu ChatGPT memanggil 18 tool dengan
-     identitas akunmu.</li>
+ <li>Salin URL MCP dari dashboard, lalu tambahkan sebagai custom MCP server di klien
+     yang kamu pakai. Contoh: <code>chatgpt.com/plugins</code> untuk ChatGPT,
+     <strong>Settings → Connectors → Add custom connector</strong> untuk Claude.</li>
+ <li>Setujui halaman izin sekali. Setelah itu agent memanggil 20 tool dengan
+     identitas akunmu, termasuk membaca materi kuliah jadi teks.</li>
 </ol>
 </div>
 
@@ -256,11 +258,12 @@ data terpisah dari pengguna lain.</p>
  <li>Kredensial EdLink disimpan terenkripsi per akun, kunci di luar database.</li>
  <li>Token tidak pernah dikirim ke model, tidak masuk log, tidak dicatat di audit.</li>
  <li>Tool tidak menerima <code>user_id</code> dari argumen; identitas dari token.</li>
- <li>Satu akun tidak bisa membaca data akun lain. Terbukti lewat 41 pemeriksaan isolasi.</li>
+ <li>Satu akun tidak bisa membaca data akun lain. Terbukti lewat pemeriksaan isolasi di test e2e.</li>
+ <li>Rate limit dihitung per user atau per IP, bukan global; akun admin tidak dihitung.</li>
  <li>Token bisa dicabut kapan saja; memutuskan EdLink ikut mencabut semua token.</li>
 </ul>
-<p>Butuh keamanan maksimal dan hanya satu perangkat? Jalankan versi lokal (stdio) dari
-repo — tidak ada port terbuka dan kredensial tidak keluar dari komputermu.</p>
+<p>Mau praktis? Pakai server publik ini. Ragu soal keamanan? Jalankan versi lokal (stdio)
+dari repo — tidak ada port terbuka dan kredensial tidak keluar dari komputermu.</p>
 </div>"""
     return page("EdLink MCP", body)
 
@@ -334,7 +337,9 @@ buka DevTools dan tidak perlu menempel token apa pun.</p>
 <div class="card">
 <h2>Endpoint MCP</h2>
 <span class="mono">{_esc(mcp_url)}</span>
-<p>Tambahkan sebagai custom MCP server di ChatGPT. Autentikasi lewat OAuth saat pertama dipakai.</p>
+<p>Tempel URL ini di chat agent mana pun yang mendukung MCP — ChatGPT, Claude, Cursor,
+OpenCode, atau klien lain. Autentikasi lewat OAuth saat pertama dipakai; klien yang
+belum mendukung OAuth bisa memakai <code>Authorization: Bearer &lt;token&gt;</code>.</p>
 <h2 style="margin-top:22px">Token akses</h2>
 <table><tr><th>ID</th><th>Nama</th><th>Dibuat</th><th>Status</th></tr>{token_rows}</table>
 <form method="post" action="/tokens/revoke" style="margin-top:14px">
@@ -598,19 +603,36 @@ def docs_page(request: Request) -> Response:
 <h1>Dokumentasi singkat</h1>
 <h2>Endpoint MCP</h2>
 <span class="mono">{_esc(proto)}://{_esc(base)}/mcp</span>
+<p>Bisa dipakai chat agent mana pun yang mendukung MCP — bukan cuma satu klien.
+Yang menentukan dukungan transport Streamable HTTP dan OAuth di klien itu.</p>
 <h2 style="margin-top:20px">ChatGPT</h2>
 <p>Buka <code>chatgpt.com/plugins</code> → tombol plus → <strong>Add custom MCP server</strong>.
 Isi nama, lalu di bagian <strong>Connection</strong> tempel URL di atas (termasuk <code>/mcp</code>).
 Setujui halaman izin OAuth sekali, lalu <strong>Create as a plugin</strong>.</p>
+<h2 style="margin-top:20px">Claude</h2>
+<p><strong>Settings → Connectors → Add custom connector</strong>, tempel URL di atas, lalu
+klik <strong>Connect</strong> dan setujui halaman izin. Setelah itu 20 tool muncul di menu tools.</p>
 <h2 style="margin-top:20px">Klien lain</h2>
-<p>Kirim header <code>Authorization: Bearer &lt;token&gt;</code>. Token dibuat lewat alur OAuth
-dan diperpanjang dengan refresh token (grant <code>refresh_token</code>).</p>
+<p>Cursor, OpenCode, ZCode, Cline, Continue: tambahkan sebagai MCP server tipe
+<code>http</code>/<code>streamable</code> dengan URL di atas. Klien yang belum mendukung OAuth
+bisa memakai header <code>Authorization: Bearer &lt;token&gt;</code>. Token dibuat lewat alur
+OAuth dan diperpanjang dengan refresh token (grant <code>refresh_token</code>).</p>
 <h2 style="margin-top:20px">Akun EdLink</h2>
 <p>Jalur utama: isi <strong>email + password EdLink</strong> di dashboard, server yang login
 dan memperbarui tokennya. Akun yang hanya bisa login lewat Google memakai token manual:
 buka <code>edlink.id</code> → DevTools (F12) → Console → jalankan
 <code>copy(helpers.getToken(document.cookie.match(/(?:^|; )token=([^;]+)/)[1]).token)</code>,
 lalu tempel di dashboard. Token manual tidak auto-refresh; ulangi kalau expired.</p>
+<h2 style="margin-top:20px">Materi kuliah</h2>
+<p>Panggil <code>edlink_materi</code> untuk daftar materi per pertemuan, lalu
+<code>edlink_materi_baca</code> untuk membaca isinya. Berkas diunduh di sisi server dan
+dikembalikan sebagai teks, jadi model tidak perlu membuka link apa pun.</p>
+<h2 style="margin-top:20px">Rate limit</h2>
+<p>Kuota dihitung per user atau per IP, bukan global; akun admin tidak dihitung.
+Pelanggaran dibalas <code>429</code> dengan header <code>Retry-After</code>.</p>
+<h2 style="margin-top:20px">Lokal atau publik</h2>
+<p>Mau praktis: pakai server publik ini. Ragu soal keamanan: jalankan versi lokal (stdio)
+dari repo — server jalan di komputermu, tidak ada port terbuka, kredensial tidak keluar.</p>
 <h2 style="margin-top:20px">Privasi</h2>
 <p>Kredensial EdLink disimpan terenkripsi per akun. Token EdLink tidak pernah dikirim ke
 model AI, tidak dicatat di log, dan tidak dibagikan ke pengguna lain.</p>
