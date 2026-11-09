@@ -1,7 +1,9 @@
 # EdLink MCP Server
 
-**MCP server untuk EdLink (edlink.id / SEVIMA)** — biar chat agent yang mendukung MCP
-(ChatGPT, Claude, dan klien lain) bisa lihat tugas, jadwal, kelas, notifikasi,
+![Banner EdLink MCP](assets/banner.png)
+
+**MCP server untuk EdLink (edlink.id / SEVIMA)**: chat agent yang mendukung MCP
+(ChatGPT atau Claude, juga klien MCP lain) bisa lihat tugas, jadwal, kelas, notifikasi,
 **membaca materi kuliah**, **mengerjakan tugas, dan mengirimnya** langsung dari akun
 masing-masing.
 
@@ -9,7 +11,7 @@ Ada dua metode untuk menyambungkan MCP:
 
 | Metode | Untuk siapa | Kredensial |
 |---|---|---|
-| **Public server** (HTTP) — praktis | siapa pun yang mau langsung pakai dari ChatGPT, Claude, atau perangkat lain | akun platform sendiri + akun EdLink sendiri, terenkripsi per user |
+| **Public server** (HTTP, praktis) | siapa pun yang mau langsung pakai dari ChatGPT, Claude, atau perangkat lain | akun platform sendiri + akun EdLink sendiri, terenkripsi per user |
 | **Lokal** (stdio) | satu orang, satu mesin, keamanan maksimal | `config.json` di komputermu sendiri |
 
 Dua-duanya menjalankan 20 tool yang sama. Yang berbeda cuma di mana kredensial
@@ -25,7 +27,7 @@ disimpan dan siapa yang boleh memanggil.
 
 ---
 
-## Metode 1 — public server (praktis)
+## Metode 1: public server (praktis)
 
 Kalau mau langsung pakai tanpa install apa pun, sambungkan ke server publik:
 
@@ -37,16 +39,16 @@ Langkahnya:
 
 1. Buka `/signup` di host itu, daftar dengan email + password (minimal 10 karakter).
 2. Login, lalu di `/dashboard` hubungkan akun EdLink kamu sendiri. Jalur utamanya
-   **email + password EdLink** — server yang login ke EdLink, jadi tidak perlu DevTools.
+   **email + password EdLink**. Server yang login ke EdLink, jadi tidak perlu DevTools.
    Akun yang cuma punya login Google pakai token sekali, lihat
    [Dua jalur koneksi EdLink](#dua-jalur-koneksi-edlink).
 3. Salin URL MCP dari dashboard: `https://<host>/mcp`.
-4. Tempel URL itu di chat agent yang kamu pakai — apa pun yang bisa menerima MCP
+4. Tempel URL itu di chat agent yang kamu pakai, apa pun yang bisa menerima MCP
    server, bukan cuma ChatGPT. Contoh:
-   - **ChatGPT**: `chatgpt.com/plugins` → tombol plus → **Add custom MCP server** →
-     tempel URL → setujui halaman izin OAuth → **Create as a plugin**.
-   - **Claude**: **Settings → Connectors → Add custom connector** → tempel URL →
-     selesaikan OAuth lewat tombol connect.
+   - **ChatGPT**: buka `chatgpt.com/plugins`, klik tombol plus, pilih **Add custom
+     MCP server**, tempel URL, setujui halaman izin OAuth, lalu **Create as a plugin**.
+   - **Claude**: buka **Settings**, masuk **Connectors**, pilih **Add custom
+     connector**, tempel URL, lalu selesaikan OAuth lewat tombol connect.
    - **Cursor / OpenCode / ZCode / Cline / klien lain**: tambahkan sebagai MCP server
      tipe `http`/`streamable` dengan URL yang sama. Klien yang mendukung OAuth akan
      membuka halaman izin sendiri; yang tidak mendukung OAuth bisa memakai
@@ -57,7 +59,7 @@ Langkahnya:
 Yang menentukan bisa atau tidaknya sebuah agent memakai server ini bukan namanya,
 tapi **dukungan MCP di klien itu**: transport Streamable HTTP, dan idealnya OAuth
 untuk ambil token sendiri. Selama itu ada, agent mana pun bisa memanggil 20 tool
-di bawah — lihat [menghubungkan chat agent ke platform](#menghubungkan-chat-agent-ke-platform).
+di bawah. Lihat [menghubungkan chat agent ke platform](#menghubungkan-chat-agent-ke-platform).
 
 ### Dua jalur koneksi EdLink
 
@@ -67,19 +69,18 @@ di bawah — lihat [menghubungkan chat agent ke platform](#menghubungkan-chat-ag
 | **Token manual** | akun EdLink yang login lewat Google (tanpa password) | kamu ambil token sekali dari DevTools, tempel di dashboard |
 
 Bedanya dengan OAuth yang biasa dipakai klien seperti ChatGPT: server ini **jadi**
-authorization server untuk klien MCP (`/oauth/authorize`, PKCE, DCR). Untuk EdLink
-peran itu tidak ada — EdLink hanya
-menyediakan `site/login` dan `auth/google` (EdLink sebagai *client* Google), tanpa
-authorization endpoint untuk pihak ketiga. Jadi tidak ada redirect browser yang bisa
-mengembalikan token EdLink ke server ini; yang bisa dilakukan cuma login langsung atau
-menyerahkan token sekali.
+authorization server untuk klien MCP (`/oauth/authorize`, PKCE, DCR). EdLink tidak
+punya peran itu. Yang tersedia hanya `site/login` dan `auth/google` (EdLink sebagai
+*client* Google), tanpa authorization endpoint untuk pihak ketiga. Artinya tidak ada
+redirect browser yang bisa mengembalikan token EdLink ke server ini. Pilihannya cuma
+dua: login langsung, atau menyerahkan token sekali.
 
 #### Kalau akun EdLink-mu login lewat Google
 
 Token diambil manual, sekali saja (ulangi kalau sudah expired dan tool meminta):
 
 1. Buka `https://edlink.id`, login lewat Google seperti biasa.
-2. Buka DevTools (`F12`) → tab **Console**.
+2. Buka DevTools dengan `F12`, lalu pilih tab **Console**.
 3. Jalankan:
 
    ```js
@@ -87,10 +88,11 @@ Token diambil manual, sekali saja (ulangi kalau sudah expired dan tool meminta):
    ```
 
 4. Token 129 karakter sudah tersalin ke clipboard.
-5. Di `/dashboard`, buka bagian **Akun EdLink** → sub-bagian token → tempel → **Simpan token**.
+5. Di `/dashboard`, buka bagian **Akun EdLink**, masuk sub-bagian token, tempel,
+   lalu **Simpan token**.
 
 Token ini kredensial hidup: hanya tempel di dashboard, jangan pernah tempel di chat,
-issue, atau commit. Mode token **tidak** auto-refresh — kalau EdLink menolak token karena
+issue, atau commit. Mode token **tidak** auto-refresh. Kalau EdLink menolak token karena
 expired, tool akan menjawab dengan instruksi mengambil token baru, ulangi langkah 1–5.
 
 Isolasi yang berlaku di server publik:
@@ -104,14 +106,14 @@ Isolasi yang berlaku di server publik:
 - Token MCP bisa dicabut kapan saja dari dashboard, dan `Putuskan EdLink` mematikan
   koneksi sekaligus mencabut seluruh token.
 
-Kalau kamu tidak butuh akses jarak jauh, **jangan pakai server publik** — pasang versi
+Kalau kamu tidak butuh akses jarak jauh, **jangan pakai server publik**; pasang versi
 lokal di bawah, itu lebih aman.
 
-Detail arsitektur, skema database, admin, dan batasan: [MULTIUSER.md](MULTIUSER.md).
+Detail arsitektur, skema database, panel admin, serta batasannya: [MULTIUSER.md](MULTIUSER.md).
 
 ---
 
-## ⚠️ Ini Reverse Engineering — baca dulu
+## ⚠️ Ini Reverse Engineering, baca dulu
 
 Project ini **bukan API resmi EdLink** dan **tidak berafiliasi** dengan SEVIMA / EdLink.
 Semua endpoint di sini dipetakan lewat **reverse engineering** dari:
@@ -158,23 +160,23 @@ Yang berhasil dipetakan:
 ## Fitur
 
 - **Lihat tugas terbuka** + deadline + kelas.
-- **Detail tugas** — instruksi lengkap, lampiran dosen, deadline, status submission.
-- **Cek jawaban sendiri** — sudah submit atau belum, jawaban apa yang terkirim.
-- **Kirim tugas** — `set-answer` untuk submission baru, `edit-answer` untuk kirim ulang.
-- **Upload lampiran** — media pribadi EdLink atau Google Drive EdLink.
-- **Auto-pilot** — agent mengerjakan lalu mengirim tugas dalam satu alur.
-- **Login link-based** — OAuth Google lewat link, atau manual email + password.
-- **Jadwal & kelas** — hari ini, bulanan, daftar kelas.
-- **Notifikasi** — semua atau hanya yang belum dibaca.
-- **Materi kuliah jadi teks** — daftar materi per pertemuan, unduh berkasnya di server,
+- **Detail tugas**: instruksi lengkap, lampiran dosen, deadline, status submission.
+- **Cek jawaban sendiri**: sudah submit atau belum, jawaban apa yang terkirim.
+- **Kirim tugas**: `set-answer` untuk submission baru, `edit-answer` untuk kirim ulang.
+- **Upload lampiran**: media pribadi EdLink atau Google Drive EdLink.
+- **Auto-pilot**: agent mengerjakan lalu mengirim tugas dalam satu alur.
+- **Login link-based**: OAuth Google lewat link, atau manual email + password.
+- **Jadwal & kelas**: hari ini, bulanan, daftar kelas.
+- **Notifikasi**: semua atau hanya yang belum dibaca.
+- **Materi kuliah jadi teks**: daftar materi per pertemuan, unduh berkasnya di server,
   lalu balikin isinya sebagai teks. Model tidak pernah membuka link, jadi tidak kena
   blokir "can only open links from the conversation" di Claude.
-- **API explorer** — `edlink_api` buat endpoint yang belum dipetakan.
-- **Platform multi-user** — tiap orang daftar sendiri, koneksi EdLink terpisah dan
+- **API explorer**: `edlink_api` buat endpoint yang belum dipetakan.
+- **Platform multi-user**: tiap orang daftar sendiri, koneksi EdLink terpisah dan
   terenkripsi, admin panel untuk suspend/cabut token.
-- **OAuth 2.1 + PKCE** — ChatGPT, Claude, dan klien MCP lain connect tanpa menempel
+- **OAuth 2.1 + PKCE**: ChatGPT, Claude, juga klien MCP lain connect tanpa menempel
   API key statis; access token 30 hari, refresh token 90 hari dengan rotasi.
-- **Audit** — login, link/unlink EdLink, dan OAuth dicatat tanpa nilai rahasia.
+- **Audit**: login, link/unlink EdLink, dan OAuth dicatat tanpa nilai rahasia.
   Rate limit per identitas aktif (lihat catatan keamanan).
 
 ---
@@ -272,7 +274,7 @@ membanjiri context; pakai rentang halaman untuk sisanya.
 | XLSX | `openpyxl`, per sheet, tiap baris digabung jadi satu baris teks | `openpyxl` |
 | PPTX | XML di dalam zip (`ppt/slides/`) | stdlib |
 | DOCX | XML di dalam zip (`word/`) | stdlib |
-| lain | berkas tetap disimpan, tidak ada teks | — |
+| lain | berkas tetap disimpan, tidak ada teks | tidak ada |
 
 `requirements.txt` sudah memuat `pypdf` dan `openpyxl`. Tanpa keduanya, berkas tetap
 terunduh dan tersimpan, tapi `teks` kosong dan ada catatan di `catatan`.
@@ -298,7 +300,7 @@ terunduh dan tersimpan, tapi `teks` kosong dan ada catatan di `catatan`.
 
 ---
 
-## Metode 2 — lokal (stdio)
+## Metode 2: lokal (stdio)
 
 Paling aman: server berjalan di komputermu, tidak ada port yang terbuka, tidak ada
 URL yang bisa bocor, token EdLink tidak pernah keluar dari mesin. Pilihan yang tepat
@@ -320,8 +322,8 @@ kalau kamu hanya memakai satu perangkat.
 
    Hasilnya salah satu:
 
-   - `"perlu_setup": false` → sudah siap, lanjut `edlink_login_status()`.
-   - `"perlu_setup": true` → pilih metode login:
+   - `"perlu_setup": false`: sudah siap, lanjut `edlink_login_status()`.
+   - `"perlu_setup": true`: pilih metode login:
 
      **A. Manual (email + password EdLink)**
 
@@ -342,7 +344,7 @@ kalau kamu hanya memakai satu perangkat.
      https://api.edlink.id/api/v1.4/auth/google
      ```
 
-     Link ini **302 redirect ke `accounts.google.com`** — jadi memang berbasis link,
+     Link ini **302 redirect ke `accounts.google.com`**, jadi memang berbasis link,
      bukan popup lokal. Setelah login Google selesai, browser akan menampilkan JSON
      callback berisi token. Copy token-nya, lalu:
 
@@ -358,7 +360,7 @@ kalau kamu hanya memakai satu perangkat.
      ```
 
 > Catatan: kalau kamu memanggil tool lain sebelum setup, MCP otomatis membalas
-> prompt pilihan `manual` / `oauth` — bukan error mentah. Tinggal jawab salah satu.
+> prompt pilihan `manual` / `oauth`, bukan error mentah. Tinggal jawab salah satu.
 
 ---
 
@@ -368,18 +370,16 @@ Cukup bilang ke agent:
 
 > kerjakan tugas terbaru dan send
 
-Alur yang dijalankan agent:
-
-Alur ini sengaja dibuat pendek supaya agent tidak perlu menebak: satu tool memilih tugas,
+Alurnya sengaja dibuat pendek supaya agent tidak perlu menebak: satu tool memilih tugas,
 satu tool membuka detail, satu tool mengirim. Kalau tugas sudah lewat deadline, tool berhenti
 di gate konfirmasi dan menunggu perintah kirim berikutnya.
 
-1. `edlink_tugas_terbaru(urut="deadline")` — ambil tugas paling dekat deadline.
+1. `edlink_tugas_terbaru(urut="deadline")`: ambil tugas paling dekat deadline.
    Pakai `urut="baru"` kalau mau tugas yang paling baru dibuat.
-2. `edlink_tugas_detail(tugas_id)` — baca `instruksi_teks`, `lampiran_tugas`, `deadline`.
+2. `edlink_tugas_detail(tugas_id)`: baca `instruksi_teks`, `lampiran_tugas`, `deadline`.
 3. Susun jawaban sesuai instruksi.
 4. Kalau tugas minta lampiran:
-   `edlink_upload_file(path="C:\\...\\tugas.pdf")` → dapat `media_id`.
+   `edlink_upload_file(path="C:\\...\\tugas.pdf")`, lalu simpan `media_id`-nya.
 5. Kirim:
    ```text
    edlink_send_tugas(
@@ -393,11 +393,11 @@ di gate konfirmasi dan menunggu perintah kirim berikutnya.
 
 **Submission gate** yang dijaga tool:
 
-- `canSubmit: false` → ditolak.
-- `requiresLateConfirmation: true` → balikin `perlu_konfirmasi_terlambat: true`;
+- `canSubmit: false`: ditolak.
+- `requiresLateConfirmation: true`: balikin `perlu_konfirmasi_terlambat: true`;
   kirim ulang dengan `konfirmasi_terlambat=True` setelah user menyuruh kirim.
-- Sudah pernah submit & `canEditSubmission: true` → otomatis pakai `edit-answer`.
-- Sudah submit & locked → ditolak.
+- Sudah pernah submit & `canEditSubmission: true`, otomatis pakai `edit-answer`.
+- Sudah submit & locked: ditolak.
 
 ### Tempel ke AGENTS.md (biar agent langsung paham)
 
@@ -405,7 +405,7 @@ di gate konfirmasi dan menunggu perintah kirim berikutnya.
 ## EdLink auto-pilot
 Saat user bilang "kerjakan tugas terbaru dan send":
 1. Panggil edlink_tugas_terbaru(urut="deadline").
-2. Baca edlink_tugas_detail(tugas_id) — ikuti instruksi_teks.
+2. Baca edlink_tugas_detail(tugas_id), lalu ikuti instruksi_teks.
 3. Susun jawaban lengkap; kalau perlu lampiran, edlink_upload_file lalu ambil media_id.
 4. Kirim edlink_send_tugas(tugas_id, jawaban, media_ids, konfirmasi_terlambat=True).
 5. Laporkan hasil {"ok", "aksi", "pesan"} apa adanya.
@@ -415,7 +415,7 @@ Saat user bilang "kerjakan tugas terbaru dan send":
 
 ## Daftarkan ke client MCP
 
-### Remote HTTP — berlaku untuk semua klien
+### Remote HTTP, berlaku untuk semua klien
 
 Cara paling universal: tambahkan `https://<host>/mcp` sebagai MCP server tipe
 HTTP/streamable di klien mana pun. Tidak perlu Python, tidak perlu repo ini di
@@ -465,7 +465,7 @@ Entry di `~/.zcode/cli/config.json`:
 }
 ```
 
-Mau pakai env vars daripada `config.json`? Tambahkan:
+Alternatif tanpa `config.json`: pakai env vars.
 
 ```json
 "env": { "EDLINK_EMAIL": "email-kamu", "EDLINK_PASSWORD": "password-kamu" }
@@ -494,8 +494,8 @@ Format sama: command `python`, argumen path `edlink_mcp.py`, transport stdio.
 
 ## Mode auth
 
-1. **Mode token** — `config.json` berisi `"token"`. Cocok untuk OAuth Google.
-2. **Mode password** — `config.json` berisi `"email"` + `"password"`. Login ulang otomatis
+1. **Mode token**: `config.json` berisi `"token"`. Cocok untuk OAuth Google.
+2. **Mode password**: `config.json` berisi `"email"` + `"password"`. Login ulang otomatis
    kalau token expired.
 
 Urutan pembacaan kredensial:
@@ -509,7 +509,8 @@ Urutan pembacaan kredensial:
 Kalau token expired dan kamu tidak mau lewat `edlink_login_oauth_link()`:
 
 1. Login ke [edlink.id](https://edlink.id) via Google di browser.
-2. Setelah masuk ke halaman `/classes`, buka **DevTools (F12) → Console**, jalankan:
+2. Setelah masuk ke halaman `/classes`, buka **DevTools** dengan `F12`, pilih tab
+   **Console**, lalu jalankan:
 
    ```js
    copy(helpers.getToken(document.cookie.match(/(?:^|; )token=([^;]+)/)[1]).token)
@@ -526,8 +527,9 @@ Kalau token expired dan kamu tidak mau lewat `edlink_login_oauth_link()`:
 
 ## Menjalankan server sendiri (opsional)
 
-Ringkasnya: mau praktis — pakai public server di Metode 1. Ragu soal keamanan —
-jalankan lokal (Metode 2). Kalau masih ragu setelah itu, tetap lokal.
+Kalau yang kamu cari praktis, public server di Metode 1 sudah cukup: daftar, tempel URL,
+selesai. Kalau kredensial tidak boleh keluar dari mesinmu sama sekali, jalankan lokal di
+Metode 2. Ragu di antara keduanya, pilih lokal.
 
 Bagian ini hanya perlu kalau kamu mau menyalakan server ini di mesin atau host
 milikmu sendiri, entah sebagai platform multi-user atau single-user HTTP. Kalau
@@ -565,7 +567,7 @@ OAuth bisa menghubungkan akunnya sendiri.
 ### Menghubungkan chat agent ke platform
 
 Berlaku untuk agent apa pun yang bisa menerima MCP server. **ChatGPT dan Claude
-adalah dua contoh**, bukan satu-satunya — apa pun yang mendukung Streamable HTTP
+adalah dua contoh**, bukan satu-satunya. Apa pun yang mendukung Streamable HTTP
 dan OAuth bisa memakai 20 tool di sini.
 
 **Langkah umum (semua klien)**
@@ -576,7 +578,7 @@ dan OAuth bisa memakai 20 tool di sini.
    untuk akunmu.
 3. Salin URL MCP yang tertulis di dashboard: `https://<host>/mcp`.
 4. Tambahkan URL itu sebagai MCP server di klien, lalu selesaikan OAuth.
-5. Uji dengan meminta agent memanggil `edlink_setup_status` — hasilnya harus
+5. Uji dengan meminta agent memanggil `edlink_setup_status`; hasilnya harus
    `perlu_setup: false` kalau koneksi EdLink sudah tersimpan.
 
 **ChatGPT**
@@ -586,14 +588,14 @@ dan OAuth bisa memakai 20 tool di sini.
 2. Isi nama dan deskripsi, lalu di bagian **Connection** tempel URL MCP
    (termasuk path `/mcp`).
 3. Di bagian authentication, selesaikan alur OAuth: halaman izin platform
-   terbuka sekali, setujui, dan ChatGPT menerima token untuk akunmu.
+   terbuka sekali, setujui, lalu ChatGPT menerima token untuk akunmu.
    Baca peringatan risiko yang muncul, lalu **I understand and want to continue**.
 4. Tekan **Create as a plugin**, lalu periksa daftar tool yang ditemukan.
 5. Minta ChatGPT memanggil `edlink_setup_status`.
 
 **Claude**
 
-1. Buka **Settings → Connectors → Add custom connector**.
+1. Buka **Settings**, masuk **Connectors**, pilih **Add custom connector**.
 2. Tempel URL MCP (termasuk path `/mcp`), lalu simpan.
 3. Klik **Connect**. Halaman izin platform terbuka sekali; setujui, dan Claude
    menerima token untuk akunmu.
@@ -607,7 +609,7 @@ Claude Desktop juga bisa menjalankan mode lokal stdio lewat
 
 **Klien lain**
 
-Cursor, OpenCode, ZCode, Cline, Continue, dan sejenisnya: tambahkan sebagai MCP
+Cursor, OpenCode, ZCode, Cline, Continue, juga klien sejenis: tambahkan sebagai MCP
 server tipe `http`/`streamable` dengan URL `https://<host>/mcp`. Klien yang
 mendukung OAuth akan membuka halaman izin sendiri; yang belum mendukung OAuth
 bisa memakai bearer token dari dashboard:
@@ -627,9 +629,9 @@ lewat refresh token (90 hari, diputar setiap pemakaian).
 
 ### Dua mode auth HTTP single-user
 
-1. **Bearer statis** (default) — `EDLINK_MCP_AUTH_TOKEN` wajib, dibandingkan
+1. **Bearer statis** (default): `EDLINK_MCP_AUTH_TOKEN` wajib, dibandingkan
    constant-time. Untuk MCP Inspector, Codex, atau skrip sendiri.
-2. **Proxy-trust** — `EDLINK_MCP_TRUST_PROXY_AUTH=1` mematikan pemeriksaan
+2. **Proxy-trust**: `EDLINK_MCP_TRUST_PROXY_AUTH=1` mematikan pemeriksaan
    bearer karena gerbang auth ada di reverse proxy. Dipakai untuk ChatGPT,
    Claude web, dan klien lain yang tidak bisa mengirim API key statis.
 
@@ -688,7 +690,7 @@ Semua endpoint di atas kebanyakan **POST**. `edlink_api` default `method="AUTO"`
 
 Beberapa catatan hasil pemetaan yang tidak kelihatan dari nama route:
 
-- `learningmaterials/all/{groupId}` **tidak ada** — selalu balas `code=3`
+- `learningmaterials/all/{groupId}` **tidak ada**: selalu balas `code=3`
   ("data tidak ditemukan"). Daftar materi ada di `sections/all/{groupId}`, di dalam
   `materials[].medias[]`.
 - `site/login` menolak body yang punya field `device` (HTTP 500). Kirim
@@ -706,7 +708,7 @@ Beberapa catatan hasil pemetaan yang tidak kelihatan dari nama route:
   hanya ke `api.edlink.id`.
 - **Platform publik**: kredensial EdLink dienkripsi per akun (Fernet, kunci di file
   terpisah mode 600), password platform di-hash Argon2id, tidak ada admin default.
-- **Rate limit per identitas** — kuota dihitung per user atau per IP, bukan global,
+- **Rate limit per identitas**: kuota dihitung per user atau per IP, bukan global,
   jadi satu user yang membanjiri server tidak memperlambat user lain. Angka lengkap
   ada di tabel di bawah; **akun admin tidak pernah dihitung** supaya pemilik server
   tidak bisa terkunci dari panelnya sendiri.
@@ -739,7 +741,7 @@ Proyek ini gratis dan tidak punya iklan. Kalau berguna buat kamu, traktir kopi:
 **[saweria.co/Luminacezz](https://saweria.co/Luminacezz)**
 
 Dana masuk ke pemeliharaan server publik (biaya host dan bandwidth), bukan ke fitur
-berbayar — semua tool tetap bisa dipakai tanpa donasi.
+berbayar. Semua tool tetap bisa dipakai tanpa donasi.
 
 ---
 
