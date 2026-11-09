@@ -769,6 +769,7 @@ def _extract_text(
             return "", {"catatan": "openpyxl belum terpasang di server; berkas tetap tersimpan."}
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         parts = []
+        sheet_titles = [sheet.title for sheet in wb.worksheets]
         for sheet in wb.worksheets:
             rows = []
             for row in sheet.iter_rows(values_only=True):
@@ -779,7 +780,7 @@ def _extract_text(
                 parts.append(f"--- sheet {sheet.title} ---\n" + "\n".join(rows))
         wb.close()
         text = "\n\n".join(parts)
-        info = {"sheet": [sheet.title for sheet in wb.worksheets]}
+        info = {"sheet": sheet_titles}
     elif ext == "pptx":
         text = _zip_xml_text(content, "ppt/slides/")
     elif ext == "docx":

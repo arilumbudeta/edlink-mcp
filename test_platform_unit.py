@@ -395,5 +395,69 @@ class EdLinkLoginShapeTests(unittest.TestCase):
         self.assertNotIn("device", seen["body"])
 
 
+class MateriToolTests(unittest.TestCase):
+    """Helper unduhan & ekstraksi teks (tanpa jaringan)."""
+
+    def test_download_url_allowlist(self) -> None:
+        import edlink_mcp
+
+        ok = "https://storage.googleapis.com/assets-edlink/p/x.backup"
+        self.assertEqual(edlink_mcp._validate_download_url(ok), ok)
+        for bad in (
+            "http://storage.googleapis.com/x",
+            "https://evil.example/x",
+            "https://storage.googleapis.com:8443/x",
+            "https://user:pw@storage.googleapis.com/x",
+        ):
+            with self.assertRaises(ValueError):
+                edlink_mcp._validate_download_url(bad)
+
+    def test_parse_pages(self) -> None:
+        import edlink_mcp
+
+        self.assertEqual(edlink_mcp._parse_pages("1-3,5", 10), [0, 1, 2, 4])
+        self.assertEqual(edlink_mcp._parse_pages("7", 5), [0, 1, 2, 3, 4])
+        self.assertEqual(edlink_mcp._parse_pages("", 3), [0, 1, 2])
+
+    def test_magic_bytes(self) -> None:
+        import edlink_mcp
+
+        self.assertTrue(edlink_mcp._magic_ok(b"%PDF-1.7\n", "pdf"))
+        self.assertTrue(edlink_mcp._magic_ok(b"PK\x03\x04rest", "xlsx"))
+        self.assertFalse(edlink_mcp._magic_ok(b"<html>", "pdf"))
+        self.assertTrue(edlink_mcp._magic_ok(b"anything", "txt"))
+
+    def test_media_file_urls_order(self) -> None:
+        import edlink_mcp
+
+        media = {
+            "file": {"link": "https://storage.googleapis.com/a.pdf"},
+            "values": {"downloadLink": "https://drive.google.com/b"},
+        }
+        kinds = [kind for kind, _ in edlink_mcp._media_file_urls(media)]
+        self.assertEqual(kinds, ["gcs", "drive"])
+        self.assertEqual(edlink_mcp._media_file_urls({}), [])
+
+    def test_extract_xlsx(self) -> None:
+        import io as _io
+
+        from openpyxl import Workbook
+
+        import edlink_mcp
+
+        wb = Workbook()
+        ws = wb.active
+        ws["A1"] = "p"
+        ws["B1"] = "p ^ q"
+        ws["A2"] = "T"
+        ws["B2"] = "T"
+        buf = _io.BytesIO()
+        wb.save(buf)
+
+        text, info = edlink_mcp._extract_text(buf.getvalue(), "xlsx", "1-5", "t.xlsx")
+        self.assertIn("p ^ q", text)
+        self.assertEqual(info.get("sheet"), ["Sheet"])
+
+
 if __name__ == "__main__":
     unittest.main()
