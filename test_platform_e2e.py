@@ -340,15 +340,15 @@ def main() -> int:
             r = bob2.get(f"{BASE}/admin")
             check("non-admin ditolak 403", r.status_code == 403)
 
-        # --- rate limit login ---
-        limited = False
+        # --- tidak ada rate limit (dimatikan atas permintaan owner) ---
+        blocked = False
         with httpx.Client(timeout=30, follow_redirects=False) as rl:
-            for _ in range(14):
+            for _ in range(15):
                 r = rl.post(f"{BASE}/login", data={"email": "nobody@test.local", "password": "wrong-password"})
                 if r.status_code == 429:
-                    limited = True
+                    blocked = True
                     break
-        check("rate limit login aktif", limited)
+        check("tidak ada blokir rate limit di login", not blocked)
 
         # --- health ---
         h = anon.get(f"{BASE}/health")

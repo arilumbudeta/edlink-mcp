@@ -22,7 +22,7 @@ Starlette  ── IdentityMiddleware ──┬── /mcp          -> FastMCP (1
    |                               └── /admin         -> administrasi
    |
    +-- SQLite (users, sessions, edlink_connections, mcp_tokens,
-   |           oauth_clients, oauth_authorization_codes, audit_events, rate_limits)
+   |           oauth_clients, oauth_authorization_codes, audit_events)
    +-- master.key (Fernet, di luar database, mode 600)
 ```
 
@@ -89,8 +89,8 @@ sungguhan sebelum disimpan, jadi kredensial salah tidak pernah masuk database.
   `/.well-known/oauth-protected-resource`, parameter `resource` di-echo,
   `iss` dikirim di redirect. Grant yang didukung: `authorization_code`,
   `refresh_token`.
-- Rate limit: signup 10/jam/IP, login 10/15 menit per IP dan per email,
-  OAuth register 30/jam/IP, OAuth token 120/15 menit per IP.
+- Rate limit: **dimatikan** di deployment ini (keputusan owner). Signup, login, DCR,
+  token, dan link EdLink tidak dibatasi. Nyalakan lagi kalau server dibuka lebih luas.
 
 ## Penyimpanan kredensial EdLink
 
@@ -115,7 +115,6 @@ sungguhan sebelum disimpan, jadi kredensial salah tidak pernah masuk database.
 | `oauth_authorization_codes` | kode sekali pakai, PKCE challenge, resource, expiry |
 | `oauth_refresh_tokens` | hash refresh token, client, scope, rotated/revoked, expiry |
 | `audit_events` | aksi, user, ip, waktu. Tanpa nilai rahasia |
-| `rate_limits` | counter per key + window |
 
 Semua query memakai parameter binding. Foreign key `ON DELETE CASCADE`.
 
@@ -276,7 +275,6 @@ for table in ("user_sessions", "edlink_connections", "mcp_tokens", "oauth_author
     cur = conn.execute(f"DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM users)")
     print(f"{table} orphans:", cur.rowcount)
 print("oauth_clients:", conn.execute("DELETE FROM oauth_clients").rowcount)
-conn.execute("DELETE FROM rate_limits")
 conn.commit()
 PY
 ```

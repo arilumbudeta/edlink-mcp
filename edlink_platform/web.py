@@ -119,8 +119,6 @@ def signup_get(request: Request) -> Response:
 
 async def signup_post(request: Request) -> Response:
     ip = _ip(request)
-    if not db.rate_limit(f"signup:{ip}", limit=10, window_seconds=3600):
-        return page("Terlalu banyak", '<div class="card"><h1>Terlalu banyak pendaftaran</h1><p>Coba lagi nanti.</p></div>', status=429)
 
     form = await request.form()
     email = str(form.get("email") or "").strip().lower()
@@ -174,11 +172,6 @@ async def login_post(request: Request) -> Response:
     email = str(form.get("email") or "").strip()
     password = str(form.get("password") or "")
     nxt = _safe_next(str(form.get("next") or "/dashboard"))
-
-    if not db.rate_limit(f"login:{ip}", limit=10, window_seconds=900) or not db.rate_limit(
-        f"login:{email.lower()}", limit=10, window_seconds=900
-    ):
-        return page("Terlalu banyak", '<div class="card"><h1>Terlalu banyak percobaan</h1><p>Tunggu 15 menit.</p></div>', status=429)
 
     user, reason = security.authenticate(email, password)
     if user is None:
@@ -293,11 +286,11 @@ buka DevTools dan tidak perlu menempel token apa pun.</p>
 <details style="margin-top:18px">
  <summary style="cursor:pointer;color:#a9b0bf">Akun EdLink-mu login lewat Google? tempel token</summary>
  <p style="font-size:13px">EdLink tidak menyediakan OAuth untuk pihak ketiga, jadi akun yang
- hanya punya login Google tidak bisa dihubungkan lewat tombol OAuth. Ambil token sekali:
- buka <code>edlink.id</code>, login, lalu di DevTools console jalankan
+ hanya punya login Google dihubungkan lewat token sekali. Caranya: buka
+ <code>edlink.id</code>, login lewat Google, buka DevTools (F12) → Console, jalankan
  <code class="mono" style="display:inline;padding:2px 6px">copy(helpers.getToken(document.cookie.match(/(?:^|; )token=([^;]+)/)[1]).token)</code>
- lalu tempel di bawah. Token berlaku beberapa jam; selama kredensial tersimpan, server
- memperbaruinya sendiri saat kedaluwarsa.</p>
+ lalu tempel di bawah. Token berlaku beberapa jam dan <strong>tidak</strong> diperbarui
+ otomatis — kalau tool bilang token expired, ulangi langkah ini.</p>
  <form method="post" action="/link">
   <label>Token EdLink (129 karakter)</label>
   <textarea name="token" rows="3" placeholder="tempel token di sini" spellcheck="false"></textarea>
@@ -337,12 +330,6 @@ async def link_post(request: Request, user: Any) -> Response:
     # Mode uji: lewati validasi ke EdLink supaya suite e2e bisa jalan tanpa
     # kredensial asli. JANGAN diset di produksi.
     test_mode = os.environ.get("EDLINK_PLATFORM_TEST_MODE") == "1"
-
-    if not db.rate_limit(f"edlink_link:{uid}", limit=20, window_seconds=900):
-        return RedirectResponse(
-            "/dashboard?error=" + _q("Terlalu banyak percobaan koneksi. Tunggu 15 menit."),
-            status_code=302,
-        )
 
     if token:
         if len(token) < 20 or len(token) > 400:
@@ -565,6 +552,12 @@ Setujui halaman izin OAuth sekali, lalu <strong>Create as a plugin</strong>.</p>
 <h2 style="margin-top:20px">Klien lain</h2>
 <p>Kirim header <code>Authorization: Bearer &lt;token&gt;</code>. Token dibuat lewat alur OAuth
 dan diperpanjang dengan refresh token (grant <code>refresh_token</code>).</p>
+<h2 style="margin-top:20px">Akun EdLink</h2>
+<p>Jalur utama: isi <strong>email + password EdLink</strong> di dashboard, server yang login
+dan memperbarui tokennya. Akun yang hanya bisa login lewat Google memakai token manual:
+buka <code>edlink.id</code> → DevTools (F12) → Console → jalankan
+<code>copy(helpers.getToken(document.cookie.match(/(?:^|; )token=([^;]+)/)[1]).token)</code>,
+lalu tempel di dashboard. Token manual tidak auto-refresh; ulangi kalau expired.</p>
 <h2 style="margin-top:20px">Privasi</h2>
 <p>Kredensial EdLink disimpan terenkripsi per akun. Token EdLink tidak pernah dikirim ke
 model AI, tidak dicatat di log, dan tidak dibagikan ke pengguna lain.</p>

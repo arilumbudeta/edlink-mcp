@@ -109,13 +109,6 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_events(user_id);
-
-CREATE TABLE IF NOT EXISTS rate_limits (
-    key          TEXT NOT NULL,
-    window_start REAL NOT NULL,
-    count        INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (key, window_start)
-);
 """
 
 
@@ -180,29 +173,3 @@ def audit(user_id: str | None, action: str, detail: str = "", ip: str = "") -> N
             "INSERT INTO audit_events (ts, user_id, action, detail, ip) VALUES (?,?,?,?,?)",
             (now(), user_id, action[:80], detail[:500], ip[:64]),
         )
-
-
-def rate_limit(key: str, limit: int, window_seconds: int) -> bool:
-    """True kalau masih diizinkan. Sliding window per detik kasar."""
-    bucket = int(now() // window_seconds) * window_seconds
-    with tx() as conn:
-        row = conn.execute(
-            "SELECT count FROM rate_limits WHERE key=? AND window_start=?",
-            (key[:200], bucket),
-        ).fetchone()
-        if row is None:
-            conn.execute(
-                "INSERT INTO rate_limits (key, window_start, count) VALUES (?,?,1)",
-                (key[:200], bucket),
-            )
-            allowed = True
-        else:
-            count = row["count"] + 1
-            conn.execute(
-                "UPDATE rate_limits SET count=? WHERE key=? AND window_start=?",
-                (count, key[:200], bucket),
-            )
-            allowed = count <= limit
-        if bucket % 3600 == 0:
-            conn.execute("DELETE FROM rate_limits WHERE window_start < ?", (bucket - 86400,))
-    return allowed

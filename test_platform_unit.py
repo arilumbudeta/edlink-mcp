@@ -174,17 +174,6 @@ class PkceTests(unittest.TestCase):
         self.assertFalse(security.verify_pkce("v", "v", method="plain"))
 
 
-class RateLimitTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        db.init_db()
-
-    def test_limit_enforced(self) -> None:
-        key = "test:" + db.new_id()
-        results = [db.rate_limit(key, limit=3, window_seconds=60) for _ in range(5)]
-        self.assertEqual(results, [True, True, True, False, False])
-
-
 class IdentityTests(unittest.TestCase):
     def test_no_identity_by_default(self) -> None:
         self.assertIsNone(identity.current_user_id())

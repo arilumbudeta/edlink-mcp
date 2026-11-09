@@ -37,42 +37,48 @@ https://8765-agqzr5ia5piewgnk2prlcfqhlm.instabox.tech
 Langkahnya, tanpa install apa pun:
 
 1. Buka `/signup` di host itu, daftar dengan email + password (minimal 10 karakter).
-2. Login, lalu di `/dashboard` hubungkan akun EdLink kamu sendiri dengan
-   **email + password EdLink**. Server yang login ke EdLink, jadi tidak perlu
-   buka DevTools dan tidak perlu menempel token.
+2. Login, lalu di `/dashboard` hubungkan akun EdLink kamu sendiri. Jalur utamanya
+   **email + password EdLink** — server yang login ke EdLink, jadi tidak perlu DevTools.
+   Akun yang cuma punya login Google pakai token sekali, lihat
+   [Dua jalur koneksi EdLink](#dua-jalur-koneksi-edlink).
 3. Salin URL MCP dari dashboard: `https://<host>/mcp`.
 4. Di ChatGPT: `chatgpt.com/plugins` → tombol plus → **Add custom MCP server** →
    tempel URL MCP → setujui halaman izin OAuth → **Create as a plugin**.
 5. Minta ChatGPT memanggil `edlink_setup_status`. Kalau jawabannya `perlu_setup: false`,
    akunmu sudah nyambung.
 
-### Kenapa tidak ada tombol "Login dengan Google" untuk EdLink?
+### Dua jalur koneksi EdLink
 
-Ada **dua OAuth berbeda** di sini, dan cuma satu yang bisa browser-based penuh:
-
-| OAuth | Pihak yang terlibat | Status |
+| Jalur | Untuk siapa | Yang dikerjakan |
 |---|---|---|
-| MCP ↔ ChatGPT/Claude | klien MCP → server ini (`/oauth/authorize`, PKCE, DCR) | browser-based, sudah jalan |
-| Akun platform ↔ akun EdLink | server ini → EdLink | **tidak ada OAuth-nya** |
+| **Email + password EdLink** (utama) | akun EdLink dengan password | server login sendiri ke `site/login`, token disimpan terenkripsi, diperbarui otomatis saat expired |
+| **Token manual** | akun EdLink yang login lewat Google (tanpa password) | kamu ambil token sekali dari DevTools, tempel di dashboard |
 
-EdLink tidak menyediakan authorization server untuk pihak ketiga. Yang ada di EdLink
-hanya `site/login` (email + password) dan `auth/google` (EdLink sebagai *client* Google,
-bukan server OAuth). Tidak ada `authorization_endpoint`, tidak ada DCR, tidak ada
-endpoint untuk mendaftarkan aplikasi kita. Artinya tidak ada token yang bisa diterbitkan
-EdLink ke platform ini lewat redirect browser — jadi tombol "Hubungkan dengan Google"
-tidak bisa dibuat, bukan karena belum dikerjakan, tapi karena sisi EdLink tidak punya
-mekanismenya.
+Bedanya dengan OAuth ChatGPT: server ini **jadi** authorization server untuk klien MCP
+(`/oauth/authorize`, PKCE, DCR). Untuk EdLink peran itu tidak ada — EdLink hanya
+menyediakan `site/login` dan `auth/google` (EdLink sebagai *client* Google), tanpa
+authorization endpoint untuk pihak ketiga. Jadi tidak ada redirect browser yang bisa
+mengembalikan token EdLink ke server ini; yang bisa dilakukan cuma login langsung atau
+menyerahkan token sekali.
 
-Karena itu jalurnya:
+#### Kalau akun EdLink-mu login lewat Google
 
-- **Punya password EdLink** → isi email + password di dashboard. Server login sendiri,
-  token disimpan terenkripsi, diperbarui otomatis saat kedaluwarsa. Nol DevTools.
-- **Login EdLink pakai Google** (tidak punya password) → tempel token sekali dari
-  DevTools. Ini satu-satunya jalan, dan hanya perlu sekali karena setelah itu server
-  memegang kredensialnya.
+Token diambil manual, sekali saja (ulangi kalau sudah expired dan tool meminta):
 
-Kalau nanti EdLink membuka OAuth pihak ketiga, tombolnya tinggal ditambahkan di
-`/oauth/authorize` milik platform dan alur token-paste bisa dihapus.
+1. Buka `https://edlink.id`, login lewat Google seperti biasa.
+2. Buka DevTools (`F12`) → tab **Console**.
+3. Jalankan:
+
+   ```js
+   copy(helpers.getToken(document.cookie.match(/(?:^|; )token=([^;]+)/)[1]).token)
+   ```
+
+4. Token 129 karakter sudah tersalin ke clipboard.
+5. Di `/dashboard`, buka bagian **Akun EdLink** → sub-bagian token → tempel → **Simpan token**.
+
+Token ini kredensial hidup: hanya tempel di dashboard, jangan pernah tempel di chat,
+issue, atau commit. Mode token **tidak** auto-refresh — kalau EdLink menolak token karena
+expired, tool akan menjawab dengan instruksi mengambil token baru, ulangi langkah 1–5.
 
 Isolasi yang berlaku di server publik:
 
@@ -152,8 +158,8 @@ Yang berhasil dipetakan:
   terenkripsi, admin panel untuk suspend/cabut token.
 - **OAuth 2.1 + PKCE** — ChatGPT dan klien lain connect tanpa menempel API key statis;
   access token 30 hari, refresh token 90 hari dengan rotasi.
-- **Rate limit + audit** — signup, login, DCR, dan token endpoint dibatasi; audit event
-  tidak memuat nilai rahasia.
+- **Audit** — login, link/unlink EdLink, dan OAuth dicatat tanpa nilai rahasia.
+  Rate limit dimatikan (lihat catatan keamanan).
 
 ---
 
@@ -561,10 +567,16 @@ Semua endpoint di atas kebanyakan **POST**. `edlink_api` default `method="AUTO"`
 
 ## Catatan keamanan
 
-- Dua file lokal — `config.json` dan `token_cache.json` — menyimpan kredensial;
-  **jangan di-commit** (sudah dibantu `.gitignore`).
-- Server hanya berjalan lokal (stdio). Kredensial tidak dikirim ke mana pun kecuali
-  langsung ke API resmi EdLink.
+- **Lokal (stdio)**: `config.json` dan `token_cache.json` menyimpan kredensial;
+  **jangan di-commit** (sudah dibantu `.gitignore`). Tidak ada port terbuka, kredensial
+  hanya ke `api.edlink.id`.
+- **Platform publik**: kredensial EdLink dienkripsi per akun (Fernet, kunci di file
+  terpisah mode 600), password platform di-hash Argon2id, tidak ada admin default.
+- **Rate limit dimatikan** di server publik ini: signup, login, DCR, token, dan link
+  EdLink tidak dibatasi. Efeknya brute force password platform dan spam signup jadi
+  mungkin. Nyalakan lagi kalau server dibuka untuk khalayak luas.
+- **Mode token EdLink tidak auto-refresh.** Kalau token expired, tool meminta token baru;
+  ambil ulang lewat DevTools seperti di README. Mode email+password yang memperbarui sendiri.
 - `edlink_send_tugas` adalah aksi tulis. Tool ini menghormati `submissionGate` dan
   menolak kalau submission ditutup atau terkunci.
 - `edlink_setup_manual` menyimpan password di `config.json` (file lokal, di-ignore git).
