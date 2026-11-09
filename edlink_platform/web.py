@@ -199,7 +199,10 @@ async def login_post(request: Request) -> Response:
 
 def logout(request: Request) -> Response:
     security.revoke_session(_cookie(request))
-    response = RedirectResponse("/", status_code=302)
+    # `next` dipakai halaman izin OAuth untuk "ganti akun" tanpa kehilangan
+    # parameter authorize; _safe_next menolak URL luar.
+    nxt = _safe_next(str(request.query_params.get("next") or "/"))
+    response = RedirectResponse(nxt, status_code=302)
     clear_session_cookie(response)
     return response
 
@@ -216,8 +219,8 @@ data terpisah dari pengguna lain.</p>
 <h2>Cara pakai</h2>
 <ol style="color:#a9b0bf;line-height:1.7;padding-left:18px">
  <li>Daftar akun platform dengan email + password.</li>
- <li>Di dashboard, tempel token EdLink (129 karakter dari DevTools <code>edlink.id</code>)
-     atau isi email + password EdLink-mu.</li>
+ <li>Di dashboard, hubungkan akun EdLink-mu dengan <strong>email + password EdLink</strong>
+     (server yang login, tanpa DevTools).</li>
  <li>Salin URL MCP dari dashboard, lalu tambahkan sebagai custom MCP server di
      <code>chatgpt.com/plugins</code>.</li>
  <li>Setujui halaman izin sekali. Setelah itu ChatGPT memanggil 18 tool dengan

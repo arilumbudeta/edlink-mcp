@@ -18,12 +18,12 @@ import json
 import secrets
 import time
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import db, security
+from . import db, security, store
 
 SCOPES = ["edlink.read", "edlink.write"]
 
@@ -144,7 +144,7 @@ def _consent_page(
     code_challenge: str,
     scope: str,
     resource: str,
-    user_email: str,
+    user: Any,
     error: str = "",
 ) -> HTMLResponse:
     params = {
@@ -160,28 +160,64 @@ def _consent_page(
         f'<input type="hidden" name="{k}" value="{_esc(v)}">' for k, v in params.items() if v
     )
     err = f'<p class="err">{_esc(error)}</p>' if error else ""
+    client_label = _esc(client["client_name"] or client["client_id"])
+
+    # "ganti akun" harus kembali ke halaman izin yang sama, bukan ke dashboard,
+    # supaya alur OAuth klien tidak putus.
+    back_raw = request.url.path + (("?" + request.url.query) if request.url.query else "")
+    switch_href = _esc("/logout?next=" + quote(back_raw, safe=""))
+
+    if store.has_connection(user["user_id"]):
+        mode = (store.summary(user["user_id"]).get("mode") or "").strip()
+        mode_note = f" (mode <code>{_esc(mode)}</code>)" if mode and mode != "-" else ""
+        edlink_status = (
+            f'<p class="ok">Akun EdLink terhubung{mode_note}. Tool akan memakai akun itu.</p>'
+        )
+    else:
+        edlink_status = (
+            '<p class="warn">Akun EdLink belum terhubung. Kamu tetap bisa menyetujui, tetapi'
+            ' tool akan menolak sampai akun EdLink dihubungkan di <a href="/dashboard">dashboard</a>'
+            " — setelah itu ulangi langkah tambah server di " + client_label + ".</p>"
+        )
+
     html = f"""<!doctype html>
 <html lang="id"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Izinkan akses MCP</title>
+<title>Izinkan {client_label} memakai EdLink MCP</title>
 <style>
  body{{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0f1115;color:#e7e9ee;
       display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}}
- .card{{max-width:520px;width:100%;background:#171a21;border:1px solid #262b36;border-radius:16px;padding:28px}}
+ .card{{max-width:560px;width:100%;background:#171a21;border:1px solid #262b36;border-radius:16px;padding:28px}}
  h1{{font-size:20px;margin:0 0 8px}} p{{color:#a9b0bf;line-height:1.55;margin:8px 0}}
+ a{{color:#9ad0ff}}
  .scope{{font-family:ui-monospace,Consolas,monospace;background:#0f1115;border:1px solid #262b36;
         border-radius:8px;padding:10px;color:#9ad0ff;font-size:13px}}
+ .caps{{color:#a9b0bf;font-size:13px;line-height:1.6;padding-left:18px;margin:8px 0 0}}
+ .caps strong{{color:#e7e9ee}}
  .row{{display:flex;gap:10px;margin-top:20px}}
  button{{flex:1;padding:12px;border-radius:10px;border:1px solid #2f7cf6;background:#2f7cf6;color:#fff;
         font-size:14px;font-weight:600;cursor:pointer}}
  button.deny{{background:transparent;border-color:#3a4150;color:#c3c9d6}}
- .err{{color:#ff8f8f}} .who{{color:#7fe0a8;font-family:ui-monospace,Consolas,monospace;font-size:13px}}
+ .err{{color:#ff8f8f}} .ok{{color:#7fe0a8}} .warn{{color:#ffd479}}
+ .who{{color:#7fe0a8;font-family:ui-monospace,Consolas,monospace;font-size:13px}}
+ .meta{{font-size:12px;color:#6f7786;margin-top:18px;line-height:1.5}}
+ hr{{border:0;border-top:1px solid #262b36;margin:16px 0}}
 </style></head><body><div class="card">
-<h1>Izinkan akses ke EdLink MCP</h1>
-<p>Aplikasi <strong>{_esc(client["client_name"] or client["client_id"])}</strong> meminta akses ke akun EdLink-mu.</p>
-<p class="who">login sebagai {_esc(user_email)}</p>
+<h1>Izinkan {client_label} memakai EdLink MCP</h1>
+<p><strong>Ini bukan login EdLink.</strong> Kamu sedang memberi izin ke
+<strong>{client_label}</strong> untuk memanggil MCP server ini atas nama akun platformmu.
+Akun EdLink yang dipakai tetap akun yang sudah kamu hubungkan sendiri di dashboard.</p>
+<p class="who">login sebagai {_esc(user["email"])} · <a href="{switch_href}">ganti akun</a></p>
 {err}
-<p>Scope yang diminta:</p><div class="scope">{_esc(scope or "edlink.read")}</div>
+<hr>
+{edlink_status}
+<p>Yang bisa dilakukan {client_label} setelah ini:</p>
+<ul class="caps">
+ <li>membaca tugas, jadwal, kelas, notifikasi, dan profil EdLink</li>
+ <li>mengunggah file dari folder upload akunmu</li>
+ <li><strong>mengirim jawaban tugas</strong> lewat <code>edlink_send_tugas</code> — aksi tulis</li>
+</ul>
+<div class="scope">{_esc(scope or "edlink.read")}</div>
 <form method="post" action="/oauth/authorize">
  {hidden}
  <div class="row">
@@ -189,6 +225,8 @@ def _consent_page(
   <button type="submit" name="decision" value="deny" class="deny">Tolak</button>
  </div>
 </form>
+<p class="meta">Token bisa dicabut kapan saja dari dashboard. Server hanya menyimpan hash
+token MCP, dan tidak pernah mengirim token/password EdLink ke klien.</p>
 </div></body></html>"""
     return HTMLResponse(html)
 
@@ -248,7 +286,7 @@ async def authorize(request: Request, session_user: Any) -> Response:
 
     if request.method == "GET":
         return _consent_page(
-            request, client, redirect_uri, state, code_challenge, scope, resource, session_user["email"]
+            request, client, redirect_uri, state, code_challenge, scope, resource, session_user
         )
 
     decision = str(params.get("decision") or "")

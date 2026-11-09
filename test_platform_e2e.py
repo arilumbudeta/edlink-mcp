@@ -242,7 +242,24 @@ def main() -> int:
                 params = {"client_id": cid, "redirect_uri": "https://chatgpt.com/connector/oauth/cb_deny",
                           "response_type": "code", "state": "s", "code_challenge": c,
                           "code_challenge_method": "S256", "scope": "edlink.read"}
-                alice.get(f"{BASE}/oauth/authorize", params=params)
+                consent = alice.get(f"{BASE}/oauth/authorize", params=params)
+                check("halaman izin tampil", consent.status_code == 200, str(consent.status_code))
+                check(
+                    "halaman izin menjelaskan ini bukan login EdLink",
+                    "bukan login EdLink" in consent.text and "ganti akun" in consent.text,
+                )
+                check(
+                    "ganti akun kembali ke authorize",
+                    "/logout?next=" in consent.text and "oauth%2Fauthorize" in consent.text
+                    or "/logout?next=%2Foauth%2Fauthorize" in consent.text,
+                )
+                if TEST_MODE:
+                    check("halaman izin melihat EdLink terhubung", "Akun EdLink terhubung" in consent.text)
+                else:
+                    check(
+                        "halaman izin memperingatkan EdLink belum terhubung",
+                        "Akun EdLink belum terhubung" in consent.text,
+                    )
                 denied = alice.post(f"{BASE}/oauth/authorize", data={**params, "decision": "deny"})
                 loc = denied.headers.get("location", "")
                 check("consent ditolak -> access_denied", "error=access_denied" in loc)
