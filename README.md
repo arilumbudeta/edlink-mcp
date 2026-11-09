@@ -732,6 +732,17 @@ Beberapa catatan hasil pemetaan yang tidak kelihatan dari nama route:
 
 ---
 
+## Dukungan
+
+Proyek ini gratis dan tidak punya iklan. Kalau berguna buat kamu, traktir kopi:
+
+**[saweria.co/Luminacezz](https://saweria.co/Luminacezz)**
+
+Dana masuk ke pemeliharaan server publik (biaya host dan bandwidth), bukan ke fitur
+berbayar — semua tool tetap bisa dipakai tanpa donasi.
+
+---
+
 ## Star Progression
 
 [![Star History Chart](https://api.star-history.com/svg?repos=arilumbudeta/edlink-mcp&type=Date)](https://www.star-history.com/#arilumbudeta/edlink-mcp&Date)
