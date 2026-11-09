@@ -234,6 +234,40 @@ def main() -> int:
                 tools = r.json().get("result", {}).get("tools", []) if r.status_code == 200 else []
                 check("tools/list berisi 18 tool", len(tools) == 18, f"dapat {len(tools)}")
 
+                # Klien MCP kadang memakai base URL tanpa /mcp.
+                root = alice.post(
+                    f"{BASE}/",
+                    content=json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 3,
+                            "method": "initialize",
+                            "params": {
+                                "protocolVersion": "2025-03-26",
+                                "capabilities": {},
+                                "clientInfo": {"name": "t", "version": "1"},
+                            },
+                        }
+                    ),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json, text/event-stream",
+                        "Authorization": f"Bearer {token_a}",
+                    },
+                )
+                check("MCP juga jalan di base URL tanpa /mcp", root.status_code == 200, str(root.status_code))
+
+                anon_root = anon.post(
+                    f"{BASE}/",
+                    content=json.dumps({"jsonrpc": "2.0", "id": 4, "method": "initialize", "params": {}}),
+                    headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+                )
+                check("base URL tanpa token ditolak 401", anon_root.status_code == 401, str(anon_root.status_code))
+                check(
+                    "GET / tetap halaman landing",
+                    "EdLink MCP" in anon.get(f"{BASE}/").text and "Cara pakai" in anon.get(f"{BASE}/").text,
+                )
+
             # OAuth ditolak user
             reg = alice.post(f"{BASE}/oauth/register", json={"redirect_uris": ["https://chatgpt.com/connector/oauth/cb_deny"]})
             if reg.status_code == 201:

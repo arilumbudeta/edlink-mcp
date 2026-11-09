@@ -26,6 +26,30 @@ from starlette.routing import Mount, Route
 from . import db, identity, oauth, security, store, web
 
 
+class _McpRootAlias:
+    """Layani MCP di "/" juga, bukan hanya "/mcp".
+
+    Klien MCP (ChatGPT, Claude) sering memakai base URL tanpa "/mcp". Tanpa
+    alias ini POST "/" jatuh ke router web lalu dijawab 404, dan klien
+    melaporkan "no MCP server was found at the provided URL" walau OAuth-nya
+    sudah sukses. GET "/" dari browser tetap halaman landing karena middleware
+    hanya menganggapnya MCP kalau Accept minta text/event-stream.
+    """
+
+    def __init__(self, app, target: str = "/mcp") -> None:
+        self.app = app
+        self.target = target
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") == "http":
+            path = scope.get("path") or "/"
+            if path in ("", "/"):
+                scope = dict(scope)
+                scope["path"] = self.target
+                scope["raw_path"] = self.target.encode()
+        await self.app(scope, receive, send)
+
+
 class IdentityMiddleware:
     """Resolve identitas dari bearer MCP atau cookie sesi web."""
 
@@ -41,7 +65,15 @@ class IdentityMiddleware:
         ident: identity.Identity | None = None
         auth_error: str = ""
 
-        if request.url.path.startswith("/mcp"):
+        path = request.url.path
+        is_mcp = path == "/mcp" or path.startswith("/mcp/")
+        if not is_mcp and path in ("", "/"):
+            # Base URL tanpa /mcp: hitung sebagai MCP kalau bukan browser yang
+            # minta HTML. GET "/" dengan Accept text/html tetap landing page.
+            accept = request.headers.get("accept", "").lower()
+            is_mcp = request.method != "GET" or "text/event-stream" in accept
+
+        if is_mcp:
             header = request.headers.get("authorization", "")
             if header.lower().startswith("bearer "):
                 raw = header[7:].strip()
@@ -211,6 +243,6 @@ def build_app(mcp_app) -> Starlette:
         Route("/oauth/register", oauth.register_client, methods=["POST"]),
         Route("/oauth/authorize", authorize_route, methods=["GET", "POST"]),
         Route("/oauth/token", oauth.token, methods=["POST"]),
-        Mount("/", app=mcp_app),
+        Mount("/", app=_McpRootAlias(mcp_app)),
     ]
     return Starlette(routes=routes, middleware=[Middleware(IdentityMiddleware)], lifespan=lifespan)
