@@ -85,15 +85,24 @@ def update_token(user_id: str, token: str) -> None:
 
 
 def load_credentials(user_id: str) -> dict[str, str]:
-    """Bentuk yang sama dengan _load_credentials() lama."""
+    """Bentuk yang sama dengan _load_credentials() lama.
+
+    `token_enc` dipakai dua hal: kredensial token yang ditempel user (mode
+    "token"), dan cache token hasil login password. Di mode "password" token
+    itu hanya cache — kredensial sebenarnya email+password, kalau tidak maka
+    token yang sudah mati akan terus dipakai dan tool berhenti bisa login ulang.
+    """
     row = _row(user_id)
     if row is None:
         raise NoConnection("user belum menghubungkan akun EdLink")
-    token = crypto.decrypt(row["token_enc"])
-    if token:
-        return {"token": token}
+    mode = (row["mode"] or "").strip()
     email = crypto.decrypt(row["email_enc"])
     password = crypto.decrypt(row["password_enc"])
+    token = crypto.decrypt(row["token_enc"])
+    if mode == "password" and email and password:
+        return {"email": email, "password": password}
+    if token:
+        return {"token": token}
     if email and password:
         return {"email": email, "password": password}
     raise NoConnection("koneksi EdLink user kosong")

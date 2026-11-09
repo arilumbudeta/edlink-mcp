@@ -317,6 +317,28 @@ class SetupPromptTests(unittest.TestCase):
         self.assertIn("Jangan menempel", prompt["catatan"])
 
 
+class CredentialModeTests(unittest.TestCase):
+    """Mode password tidak boleh dilaporkan sebagai mode token gara-gara cache."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        db.init_db()
+
+    def test_password_mode_wins_over_cached_token(self) -> None:
+        uid = security.create_user(f"c{db.new_id()}@example.test", "password-cccc-1")
+        store.save_connection(uid, "password", email="ed@x.test", password="ed-pass")
+        store.write_token_cache(uid, "t" * 96, extra={"mode": "password"})
+        creds = store.load_credentials(uid)
+        self.assertEqual(creds.get("email"), "ed@x.test")
+        self.assertIn("password", creds)
+        self.assertNotIn("token", creds)
+
+    def test_token_mode_returns_token(self) -> None:
+        uid = security.create_user(f"d{db.new_id()}@example.test", "password-dddd-1")
+        store.save_connection(uid, "token", token="pasted-token-value-1234567890")
+        self.assertEqual(store.load_credentials(uid), {"token": "pasted-token-value-1234567890"})
+
+
 class EdLinkLoginShapeTests(unittest.TestCase):
     """Bentuk response login EdLink (per Nov 2026: data.userToken.token)."""
 
