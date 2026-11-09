@@ -317,5 +317,61 @@ class SetupPromptTests(unittest.TestCase):
         self.assertIn("Jangan menempel", prompt["catatan"])
 
 
+class EdLinkLoginShapeTests(unittest.TestCase):
+    """Bentuk response login EdLink (per Nov 2026: data.userToken.token)."""
+
+    def test_token_nested_in_user_token(self) -> None:
+        import edlink_mcp
+
+        token = "7" * 96
+        payload = {"data": {"id": 1, "userToken": {"token": token}}, "applicationSystem": None}
+        self.assertEqual(edlink_mcp._extract_token(payload), token)
+
+    def test_token_at_top_level_still_works(self) -> None:
+        import edlink_mcp
+
+        token = "a" * 40
+        self.assertEqual(edlink_mcp._extract_token({"data": {"token": token}}), token)
+
+    def test_missing_token_error_does_not_leak_payload(self) -> None:
+        import edlink_mcp
+
+        secret = "sup3r-s3cret-value-abcdef"
+        with self.assertRaises(RuntimeError) as ctx:
+            edlink_mcp._extract_token({"data": {"name": secret, "email": "x@y.test"}})
+        self.assertNotIn(secret, str(ctx.exception))
+        self.assertIn("Kunci yang ada", str(ctx.exception))
+
+    def test_login_does_not_send_device(self) -> None:
+        """EdLink 500 untuk device dict; _login wajib tidak mengirimkannya."""
+        import asyncio
+
+        import edlink_mcp
+
+        seen: dict[str, object] = {}
+
+        async def fake(path, method="POST", body=None, token=None):
+            seen["path"] = path
+            seen["body"] = dict(body or {})
+            return {"data": {"userToken": {"token": "z" * 96}}}
+
+        original_request = edlink_mcp._edlink_request_payload
+        original_creds = edlink_mcp._load_credentials
+        original_cache = edlink_mcp._write_token_cache
+        edlink_mcp._edlink_request_payload = fake  # type: ignore[assignment]
+        edlink_mcp._load_credentials = lambda: {"email": "e@x.test", "password": "p"}  # type: ignore[assignment]
+        edlink_mcp._write_token_cache = lambda *a, **k: None  # type: ignore[assignment]
+        try:
+            token = asyncio.run(edlink_mcp._login())
+        finally:
+            edlink_mcp._edlink_request_payload = original_request  # type: ignore[assignment]
+            edlink_mcp._load_credentials = original_creds  # type: ignore[assignment]
+            edlink_mcp._write_token_cache = original_cache  # type: ignore[assignment]
+
+        self.assertEqual(token, "z" * 96)
+        self.assertEqual(seen["path"], "site/login")
+        self.assertNotIn("device", seen["body"])
+
+
 if __name__ == "__main__":
     unittest.main()

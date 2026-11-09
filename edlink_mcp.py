@@ -294,24 +294,48 @@ def _write_token_cache(token: str, extra: dict[str, Any] | None = None) -> None:
 
 # ------------------------------------------------------------------- api ---
 
-def _extract_token(login_payload: Any) -> str:
-    """Token bisa di beberapa field tergantung versi API — cek kandidat umum."""
-    candidates = [
-        login_payload,
-        login_payload.get("data") if isinstance(login_payload, dict) else None,
-    ]
-    for obj in candidates:
-        if not isinstance(obj, dict):
-            continue
-        for key in ("token", "access_token", "accessToken", "authorization"):
+_TOKEN_KEYS = ("token", "access_token", "accessToken", "authorization", "userToken")
+
+
+def _find_token(obj: Any, depth: int = 0) -> str | None:
+    """Cari token di struktur response sedalam mungkin.
+
+    Per Nov 2026 login web mengembalikan token di `data.userToken.token`,
+    bukan `data.token`, jadi pencarian harus rekursif.
+    """
+    if depth > 6:
+        return None
+    if isinstance(obj, dict):
+        for key in _TOKEN_KEYS:
             val = obj.get(key)
-            if isinstance(val, str) and val:
+            if isinstance(val, str) and len(val) >= 16:
                 return val
-            if isinstance(val, dict) and isinstance(val.get("token"), str):
-                return val["token"]
+            if isinstance(val, dict):
+                inner = val.get("token")
+                if isinstance(inner, str) and len(inner) >= 16:
+                    return inner
+        for key, val in obj.items():
+            found = _find_token(val, depth + 1)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _find_token(item, depth + 1)
+            if found:
+                return found
+    return None
+
+
+def _extract_token(login_payload: Any) -> str:
+    """Token bisa di beberapa field tergantung versi API."""
+    found = _find_token(login_payload)
+    if found:
+        return found
+    # Jangan pernah dump payload: isinya profil user dan bisa memuat token.
+    top = list(login_payload)[:12] if isinstance(login_payload, dict) else type(login_payload).__name__
     raise RuntimeError(
-        f"Login sukses tapi token tidak ditemukan di response. Struktur response: "
-        f"{json.dumps(login_payload)[:500]}"
+        "Login sukses tapi token tidak ditemukan di response. "
+        f"Kunci yang ada: {', '.join(map(str, top))}"
     )
 
 
@@ -388,16 +412,20 @@ async def _login() -> str:
     if "token" in creds:
         _write_token_cache(creds["token"], extra={"mode": "token"})
         return creds["token"]
-    device = _load_device()
+    # `device` sengaja TIDAK dikirim: per Nov 2026 EdLink menjawab HTTP 500
+    # untuk semua bentuk device dict (secureId saja pun gagal), sedangkan tanpa
+    # field ini login web berjalan normal. Device fingerprint hanya dipakai
+    # alur mobile.
     payload = {
         "username": "",
         "app_id": "",
         "email": creds["email"],
         "password": creds["password"],
         "web_reg_id": None,
-        "device": device,
     }
-    result = await _edlink_request("site/login", method="POST", body=payload)
+    # Payload mentah, bukan _normalize(): token berada di data.userToken.token
+    # dan normalisasi hanya mengembalikan `data` tanpa jaminan bentuk.
+    result = await _edlink_request_payload("site/login", method="POST", body=payload)
     token = _extract_token(result)
     _write_token_cache(token, extra={"mode": "password"})
     return token
