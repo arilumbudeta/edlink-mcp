@@ -11,7 +11,7 @@ Ada dua bentuk deployment:
 | **Platform publik** (`platform_main.py`) | siapa pun yang mau pakai dari ChatGPT atau perangkat lain | akun platform sendiri, akun EdLink sendiri, terenkripsi per user |
 | **Lokal stdio** (`edlink_mcp.py`) | satu orang, satu mesin, keamanan maksimal | `config.json` di komputermu sendiri |
 
-Dua-duanya menjalankan 18 tool yang sama. Yang berbeda cuma di mana kredensial disimpan dan
+Dua-duanya menjalankan 20 tool yang sama. Yang berbeda cuma di mana kredensial disimpan dan
 siapa yang boleh memanggil.
 
 > **Lokal tetap yang paling aman.** Tidak ada port terbuka, tidak ada URL yang bisa bocor,

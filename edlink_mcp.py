@@ -20,6 +20,7 @@ Jalankan HTTP :  EDLINK_MCP_TRANSPORT=http python edlink_mcp.py
 """
 
 import html as html_lib
+import io
 import json
 import mimetypes
 import os
@@ -27,10 +28,12 @@ import re
 import secrets
 import time
 import uuid
+import zipfile
 import webbrowser
 from functools import wraps
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 import httpx
 
@@ -525,6 +528,271 @@ async def _authed_request(
     raise last_exc or RuntimeError(f"EdLink API {path}: tidak ada method yang didukung")
 
 
+# ------------------------------------------------------ materi & unduhan ---
+
+# Host yang boleh dihubungi untuk unduhan materi. Diverifikasi dari URL yang
+# dikembalikan API EdLink: storage.googleapis.com/assets-edlink/... untuk GCS,
+# drive.google.com untuk downloadLink Drive, dan drive.usercontent.google.com
+# sebagai tujuan redirect unduhan Drive.
+DOWNLOAD_ALLOWED_HOSTS = {
+    "storage.googleapis.com",
+    "drive.google.com",
+    "drive.usercontent.google.com",
+}
+DOWNLOAD_ALLOWED_SCHEMES = {"https"}
+DOWNLOAD_MAX_BYTES = 40 * 1024 * 1024
+TEXT_MAX_CHARS = 60000
+SECTION_TYPES = {1: "UTS", 2: "UAS"}
+
+
+def _section_type(value: Any) -> str:
+    return SECTION_TYPES.get(value, "kuliah")
+
+
+async def _class_lists() -> list[dict[str, Any]]:
+    """Daftar kelas aktif. group/academic-lists terbukti paling lengkap."""
+    data = await _authed_request("group/academic-lists")
+    if isinstance(data, dict):
+        data = data.get("data") or []
+    return [item for item in (data or []) if isinstance(item, dict)]
+
+
+def _media_file_urls(media: dict[str, Any]) -> list[tuple[str, str]]:
+    """Kandidat URL unduhan: GCS dulu, lalu Google Drive."""
+    out: list[tuple[str, str]] = []
+    gcs = ((media.get("file") or {}).get("link") or "").strip()
+    if gcs:
+        out.append(("gcs", gcs))
+    drive = ((media.get("values") or {}).get("downloadLink") or "").strip()
+    if drive:
+        out.append(("drive", drive))
+    return out
+
+
+async def _find_media(
+    media_id: int, kelas: str = ""
+) -> tuple[dict[str, Any] | None, str, str]:
+    """>(media, nama_kelas, error). Cari media_id di sesi kelas sampai ketemu."""
+    classes = await _class_lists()
+    needle = kelas.strip().lower()
+    if needle:
+        classes = [
+            c
+            for c in classes
+            if needle in str(c.get("name") or "").lower()
+            or needle in str(c.get("shortName") or "").lower()
+        ]
+        if not classes:
+            return None, "", f"Kelas '{kelas}' tidak ditemukan."
+    for cls in classes[:12]:
+        try:
+            sections = await _authed_request(f"sections/all/{cls.get('id')}")
+        except Exception:  # noqa: BLE001 - kelas tanpa akses sesi dilewati
+            continue
+        for sec in sections or []:
+            if not isinstance(sec, dict):
+                continue
+            for mat in sec.get("materials") or []:
+                for media in mat.get("medias") or []:
+                    try:
+                        if int(media.get("id") or 0) == media_id:
+                            return media, str(cls.get("name") or ""), ""
+                    except (TypeError, ValueError):
+                        continue
+    return None, "", (
+        f"media_id {media_id} tidak ditemukan. Panggil edlink_materi dulu untuk "
+        "mendapatkan media_id yang benar."
+    )
+
+
+def _validate_download_url(url: str) -> str:
+    """HTTPS + host allowlist. Token tidak pernah ikut ke host unduhan."""
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in DOWNLOAD_ALLOWED_SCHEMES:
+        raise ValueError(f"skema unduhan tidak didukung: {scheme or '(kosong)'!r}")
+    if parsed.username or parsed.password:
+        raise ValueError("URL unduhan tidak boleh mengandung kredensial")
+    if parsed.port not in (None, 443):
+        raise ValueError(f"port unduhan tidak didukung: {parsed.port}")
+    host = (parsed.hostname or "").lower()
+    if host not in DOWNLOAD_ALLOWED_HOSTS:
+        raise ValueError(f"host unduhan tidak diizinkan: {host or '(kosong)'!r}")
+    return url
+
+
+def _looks_like_html(content: bytes) -> bool:
+    return content[:5].lower() in (b"<!doc", b"<html")
+
+
+async def _drive_confirm(html: str, base_url: str) -> bytes | None:
+    """Halaman interstitial Google Drive: kirim ulang form konfirmasinya."""
+    match = re.search(r'action="([^"]+)"', html)
+    if not match:
+        return None
+    action = _validate_download_url(urljoin(base_url, html_lib.unescape(match.group(1))))
+    inputs = [
+        (html_lib.unescape(key), html_lib.unescape(value))
+        for key, value in re.findall(r'name="([^"]+)"\s+value="([^"]*)"', html)
+    ]
+    if not inputs:
+        return None
+    query = urlencode(inputs)
+    return await _download_bytes(f"{action}{'&' if '?' in action else '?'}{query}", _skip_drive_confirm=True)
+
+
+async def _download_bytes(
+    url: str, max_redirects: int = 5, _skip_drive_confirm: bool = False
+) -> bytes:
+    """GET tanpa Authorization. Tiap hop redirect divalidasi host + skema."""
+    current = _validate_download_url(url)
+    headers = {"Accept": "*/*", "User-Agent": "edlink-mcp/1.0"}
+    async with httpx.AsyncClient(timeout=180.0, follow_redirects=False, headers=headers) as client:
+        for _ in range(max_redirects + 1):
+            resp = await client.get(current)
+            if 300 <= resp.status_code < 400 and resp.headers.get("location"):
+                current = _validate_download_url(urljoin(current, resp.headers["location"]))
+                continue
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            data = resp.content
+            if len(data) > DOWNLOAD_MAX_BYTES:
+                raise RuntimeError(f"berkas melebihi batas {DOWNLOAD_MAX_BYTES // (1024 * 1024)} MB")
+            if (
+                not _skip_drive_confirm
+                and (urlparse(current).hostname or "").lower() in ("drive.google.com", "drive.usercontent.google.com")
+                and _looks_like_html(data)
+            ):
+                confirmed = await _drive_confirm(data.decode("utf-8", "replace"), current)
+                if confirmed is None:
+                    raise RuntimeError("halaman konfirmasi Google Drive tidak bisa dilewati")
+                return confirmed
+            return data
+    raise RuntimeError("terlalu banyak redirect saat mengunduh materi")
+
+
+def _magic_ok(content: bytes, ext: str) -> bool:
+    head = content[:8]
+    if ext == "pdf":
+        return head.startswith(b"%PDF")
+    if ext in ("pptx", "docx", "xlsx"):
+        return head.startswith(b"PK")
+    if ext == "ppt":
+        return head.startswith(b"\xd0\xcf\x11\xe0")
+    return True
+
+
+def _sanitize_filename(name: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip().rstrip(".")
+    return cleaned[:150] or "materi"
+
+
+def _materi_dir() -> Path:
+    """Folder simpan materi: per user di mode platform, lokal di mode stdio."""
+    user_id = _platform_user_id()
+    if user_id:
+        root = Path(os.environ.get("EDLINK_PLATFORM_UPLOAD_DIR", "data/uploads"))
+        return (root / user_id / "materi").resolve()
+    return Path(os.environ.get("EDLINK_MATERI_DIR", str(SCRIPT_DIR / "materi"))).expanduser().resolve()
+
+
+def _parse_pages(spec: str, total: int) -> list[int]:
+    """"1-5,8" -> [0,1,2,3,4,7] (0-based, dibatasi 1..total)."""
+    if total <= 0:
+        return []
+    chosen: list[int] = []
+    for part in str(spec or "").replace(" ", "").split(","):
+        if not part:
+            continue
+        if "-" in part:
+            a, _, b = part.partition("-")
+            try:
+                start, end = int(a), int(b)
+            except ValueError:
+                continue
+        else:
+            try:
+                start = end = int(part)
+            except ValueError:
+                continue
+        for page in range(max(1, start), min(total, end) + 1):
+            if page - 1 not in chosen:
+                chosen.append(page - 1)
+    return chosen or list(range(min(total, 15)))
+
+
+def _zip_xml_text(content: bytes, prefix: str) -> str:
+    """Ambil teks dari pptx/docx (.docx/pptx = zip + XML)."""
+    chunks: list[str] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            names = [n for n in zf.namelist() if n.startswith(prefix) and n.endswith(".xml")]
+            names.sort(key=lambda n: (len(n), n))
+            for name in names:
+                xml = zf.read(name).decode("utf-8", "replace")
+                texts = re.findall(r"<(?:w:t|a:t)[^>]*>(.*?)</(?:w:t|a:t)>", xml, re.S)
+                if texts:
+                    chunks.append(f"--- {name} ---\n" + " ".join(html_lib.unescape(t) for t in texts))
+                elif re.search(r"<a:p>|<w:p[ >]", xml):
+                    chunks.append(f"--- {name} ---\n(paragraf tanpa teks)")
+    except zipfile.BadZipFile:
+        return ""
+    return "\n\n".join(chunks)
+
+
+def _extract_text(
+    content: bytes, ext: str, halaman: str, name: str
+) -> tuple[str, dict[str, Any]]:
+    """Ekstrak teks supaya model tidak perlu akses file sama sekali."""
+    ext = (ext or "").lower()
+    info: dict[str, Any] = {}
+    if ext == "pdf":
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return "", {"catatan": "pypdf belum terpasang di server; berkas tetap tersimpan."}
+        reader = PdfReader(io.BytesIO(content))
+        total = len(reader.pages)
+        pages = _parse_pages(halaman, total)
+        parts = []
+        for index in pages:
+            try:
+                parts.append(f"--- halaman {index + 1} ---\n{reader.pages[index].extract_text() or ''}".strip())
+            except Exception as exc:  # noqa: BLE001 - halaman rusak jangan gagalkan semua
+                parts.append(f"--- halaman {index + 1} ---\n(gagal dibaca: {exc})")
+        text = "\n\n".join(parts)
+        info = {"total_halaman": total, "halaman_dibaca": [p + 1 for p in pages]}
+    elif ext == "xlsx":
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            return "", {"catatan": "openpyxl belum terpasang di server; berkas tetap tersimpan."}
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        parts = []
+        for sheet in wb.worksheets:
+            rows = []
+            for row in sheet.iter_rows(values_only=True):
+                cells = [str(cell) for cell in row if cell is not None]
+                if cells:
+                    rows.append(" | ".join(cells))
+            if rows:
+                parts.append(f"--- sheet {sheet.title} ---\n" + "\n".join(rows))
+        wb.close()
+        text = "\n\n".join(parts)
+        info = {"sheet": [sheet.title for sheet in wb.worksheets]}
+    elif ext == "pptx":
+        text = _zip_xml_text(content, "ppt/slides/")
+    elif ext == "docx":
+        text = _zip_xml_text(content, "word/")
+    else:
+        return "", {"catatan": f"ekstraksi teks untuk .{ext or '?'} belum didukung; berkas tersimpan."}
+
+    if len(text) > TEXT_MAX_CHARS:
+        text = text[:TEXT_MAX_CHARS]
+        info["dipotong"] = f"teks dipotong di {TEXT_MAX_CHARS} karakter"
+    return text, info
+
+
 # ------------------------------------------------------------- formatting ---
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -965,6 +1233,182 @@ async def edlink_send_tugas(
         ensure_ascii=False,
         default=str,
     )
+
+
+@tool()
+async def edlink_materi(kelas: str = "", batas: int = 40) -> str:
+    """Daftar materi kuliah per pertemuan, plus media_id berkasnya.
+
+    kelas: nama kelas (potongan nama juga boleh, mis. "logika"). Kosong = daftar kelas.
+    batas: maksimal sesi yang ditampilkan (1-60).
+
+    Sumber: sections/all/{groupId} -> materials[].medias[]. Pakai media_id hasil
+    tool ini di edlink_materi_baca untuk membaca isinya.
+    """
+    limit = max(1, min(int(batas), 60))
+    classes = await _class_lists()
+
+    needle = kelas.strip().lower()
+    if not needle:
+        return json.dumps(
+            {
+                "jumlah_kelas": len(classes),
+                "kelas": [
+                    {
+                        "group_id": c.get("id"),
+                        "nama": c.get("name"),
+                        "paralel": c.get("className"),
+                        "sesi": c.get("sectionsCount"),
+                    }
+                    for c in classes
+                ],
+                "catatan": "Panggil lagi dengan kelas=<nama> untuk daftar materi, contoh kelas=\"logika\".",
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+
+    matches = [
+        c
+        for c in classes
+        if needle in str(c.get("name") or "").lower()
+        or needle in str(c.get("shortName") or "").lower()
+        or needle in str(c.get("className") or "").lower()
+    ]
+    if not matches:
+        return json.dumps(
+            {"ok": False, "error": f"Kelas '{kelas}' tidak ditemukan.", "kelas_tersedia": [c.get("name") for c in classes]},
+            ensure_ascii=False,
+        )
+    if len(matches) > 1:
+        return json.dumps(
+            {
+                "ok": False,
+                "error": "Nama kelas ambigu, pakai nama yang lebih spesifik.",
+                "kandidat": [{"group_id": c.get("id"), "nama": c.get("name"), "paralel": c.get("className")} for c in matches],
+            },
+            ensure_ascii=False,
+        )
+
+    cls = matches[0]
+    gid = cls.get("id")
+    sections = await _authed_request(f"sections/all/{gid}")
+    if not isinstance(sections, list):
+        sections = []
+
+    out_sections = []
+    for sec in sorted(sections, key=lambda s: (s.get("meet") or 0))[:limit]:
+        mats = []
+        for mat in sec.get("materials") or []:
+            berkas = []
+            for media in mat.get("medias") or []:
+                sumber = [kind for kind, url in _media_file_urls(media) if url]
+                berkas.append(
+                    {
+                        "media_id": media.get("id"),
+                        "nama": media.get("name"),
+                        "ext": media.get("extension"),
+                        "sumber": sumber,
+                        "ada_link": bool(sumber),
+                    }
+                )
+            mats.append({"judul": mat.get("title"), "materi_id": mat.get("id"), "berkas": berkas})
+        out_sections.append(
+            {
+                "meet": sec.get("meet"),
+                "tipe": _section_type(sec.get("type")),
+                "judul": sec.get("title"),
+                "materi": mats,
+            }
+        )
+
+    return json.dumps(
+        {
+            "ok": True,
+            "kelas": {"group_id": gid, "nama": cls.get("name"), "paralel": cls.get("className")},
+            "jumlah_sesi": len(sections),
+            "sesi": out_sections,
+            "catatan": "Baca isi berkas dengan edlink_materi_baca(materi_id=<media_id>, kelas=<nama>).",
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+
+@tool()
+async def edlink_materi_baca(
+    materi_id: int, kelas: str = "", halaman: str = "1-15", simpan: bool = True
+) -> str:
+    """Unduh satu berkas materi lalu kembalikan isinya sebagai teks.
+
+    materi_id: nilai media_id dari edlink_materi.
+    kelas: nama kelas asal berkas (opsional, mempercepat pencarian).
+    halaman: rentang halaman PDF, mis. "1-15", "3", "1-5,8".
+    simpan: True -> berkas disimpan di folder materi akun ini.
+
+    PDF dibaca dengan pypdf, XLSX dengan openpyxl, PPTX/DOCX dibaca langsung
+    dari XML di dalam zip. Berkas diunduh tanpa header Authorization dan hanya
+    dari host yang diizinkan.
+    """
+    media, cls_name, err = await _find_media(int(materi_id), kelas)
+    if err:
+        return json.dumps({"ok": False, "error": err}, ensure_ascii=False)
+    assert media is not None
+
+    candidates = _media_file_urls(media)
+    if not candidates:
+        return json.dumps(
+            {"ok": False, "error": "Berkas ini tidak punya link unduhan di EdLink."},
+            ensure_ascii=False,
+        )
+
+    content = b""
+    last_err = ""
+    used = ""
+    for kind, url in candidates:
+        try:
+            content = await _download_bytes(url)
+        except Exception as exc:  # noqa: BLE001 - laporkan apa adanya
+            last_err = f"{kind}: {exc}"
+            continue
+        if not content:
+            last_err = f"{kind}: kosong"
+            continue
+        used = kind
+        break
+    if not content:
+        return json.dumps(
+            {"ok": False, "error": f"Unduhan gagal ({last_err})."}, ensure_ascii=False
+        )
+
+    name = _sanitize_filename(str(media.get("name") or f"materi-{materi_id}"))
+    ext = str(media.get("extension") or Path(name).suffix.lstrip(".")).lower()
+    if not _magic_ok(content, ext):
+        return json.dumps(
+            {"ok": False, "error": f"Berkas {name} tidak cocok dengan ekstensi {ext or '?'}."},
+            ensure_ascii=False,
+        )
+
+    saved_path = ""
+    if simpan:
+        path = _materi_dir() / f"{materi_id}-{name}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        saved_path = str(path)
+
+    text, info = _extract_text(content, ext, halaman, name)
+    payload = {
+        "ok": True,
+        "nama": name,
+        "kelas": cls_name,
+        "ext": ext,
+        "ukuran_kb": max(1, len(content) // 1024),
+        "sumber": used,
+        "disimpan": saved_path,
+        "teks": text,
+        **info,
+    }
+    return json.dumps(payload, ensure_ascii=False)
 
 
 @tool()

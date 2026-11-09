@@ -6,3 +6,8 @@ httpx>=0.27.0
 # Platform multi-user (platform_main.py). Mode stdio tidak membutuhkannya.
 argon2-cffi>=23.1.0
 cryptography>=42.0.0
+
+# Baca isi materi (edlink_materi_baca): PDF + spreadsheet.
+# PPTX/DOCX dibaca lewat zipfile di stdlib, tanpa dependensi tambahan.
+pypdf>=7.0.0
+openpyxl>=3.1.5

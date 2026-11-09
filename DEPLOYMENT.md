@@ -199,7 +199,7 @@ Berdasarkan dokumentasi resmi OpenAI (developers.openai.com/plugins):
    termasuk `/mcp`.
 4. Autentikasi: pilih tanpa auth. Endpoint ini publik.
 5. Setujui risk warning → **Create as a plugin**.
-6. Tinjau tool yang terdeteksi (harus 18), lalu install dan uji di chat.
+6. Tinjau tool yang terdeteksi (harus 20), lalu install dan uji di chat.
 
 Batasan yang perlu diketahui:
 

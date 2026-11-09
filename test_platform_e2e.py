@@ -232,7 +232,7 @@ def main() -> int:
                 check("MCP initialize dengan token OAuth", r.status_code == 200, str(r.status_code))
                 r = rpc(alice, token_a, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
                 tools = r.json().get("result", {}).get("tools", []) if r.status_code == 200 else []
-                check("tools/list berisi 18 tool", len(tools) == 18, f"dapat {len(tools)}")
+                check("tools/list berisi 20 tool", len(tools) == 20, f"dapat {len(tools)}")
 
                 # Klien MCP kadang memakai base URL tanpa /mcp.
                 root = alice.post(

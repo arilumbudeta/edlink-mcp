@@ -15,7 +15,7 @@ Mode stdio tidak berubah dan tidak membutuhkan paket `edlink_platform`.
 ChatGPT / klien MCP
    |  Authorization: Bearer <token platform>
    v
-Starlette  ── IdentityMiddleware ──┬── /mcp          -> FastMCP (18 tool)
+Starlette  ── IdentityMiddleware ──┬── /mcp          -> FastMCP (20 tool)
    |                               ├── /oauth/*      -> authorization server
    |                               ├── /signup /login -> akun platform
    |                               ├── /dashboard     -> hubungkan EdLink
@@ -35,7 +35,7 @@ Identitas per request:
    `_write_token_cache`, `_load_device`) menanyakan user aktif lebih dulu.
    Kalau tidak ada user (stdio), jalur file lama dipakai.
 
-Tool **tidak pernah** menerima `user_id` dari argumen. Skema 18 tool tidak berubah.
+Tool **tidak pernah** menerima `user_id` dari argumen. Skema tool tidak berubah (20 tool).
 
 Di mode platform, tool setup ikut menyesuaikan:
 
