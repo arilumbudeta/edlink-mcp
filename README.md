@@ -1,18 +1,65 @@
 # EdLink MCP Server
 
-**MCP server untuk EdLink (edlink.id / SEVIMA)** — biar agent coding bisa lihat tugas,
-jadwal, kelas, notifikasi, **mengerjakan tugas, dan mengirimnya** langsung dari akun kamu.
+**MCP server untuk EdLink (edlink.id / SEVIMA)** — biar agent coding dan ChatGPT bisa lihat
+tugas, jadwal, kelas, notifikasi, **mengerjakan tugas, dan mengirimnya** langsung dari akun
+masing-masing.
 
-Project ini menggabungkan pembacaan data akademik dengan aksi pengiriman tugas, jadi agent
-tidak cuma bisa menjawab "ada tugas apa" — ia juga bisa membaca instruksi, menyusun jawaban,
-mengunggah lampiran, dan mengirimkannya lewat alur yang sama dengan web EdLink. Semua tool
-berjalan lewat stdio lokal dan memakai token akun kamu sendiri, sehingga tidak ada server
-perantara yang menyimpan kredensial.
+Ada dua bentuk deployment:
+
+| Bentuk | Untuk siapa | Kredensial |
+|---|---|---|
+| **Platform publik** (`platform_main.py`) | siapa pun yang mau pakai dari ChatGPT atau perangkat lain | akun platform sendiri, akun EdLink sendiri, terenkripsi per user |
+| **Lokal stdio** (`edlink_mcp.py`) | satu orang, satu mesin, keamanan maksimal | `config.json` di komputermu sendiri |
+
+Dua-duanya menjalankan 18 tool yang sama. Yang berbeda cuma di mana kredensial disimpan dan
+siapa yang boleh memanggil.
+
+> **Lokal tetap yang paling aman.** Tidak ada port terbuka, tidak ada URL yang bisa bocor,
+> token EdLink tidak pernah meninggalkan komputer sendiri. Pakai platform publik kalau kamu
+> memang butuh akses dari ChatGPT atau dari perangkat lain.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-stdio-6E56CF?style=for-the-badge)
+![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20streamable%20HTTP-6E56CF?style=for-the-badge)
+![OAuth](https://img.shields.io/badge/OAuth-2.1%20%2B%20PKCE-2F7CF6?style=for-the-badge)
 ![EdLink](https://img.shields.io/badge/EdLink-reverse--engineered-0A66C2?style=for-the-badge)
 ![Stars](https://img.shields.io/github/stars/arilumbudeta/edlink-mcp?style=for-the-badge&logo=github&color=FFD700)
+
+---
+
+## Pakai server publik (multi-user)
+
+Server contoh berjalan di:
+
+```
+https://8765-agqzr5ia5piewgnk2prlcfqhlm.instabox.tech
+```
+
+Langkahnya, tanpa install apa pun:
+
+1. Buka `/signup` di host itu, daftar dengan email + password (minimal 10 karakter).
+2. Login, lalu di `/dashboard` hubungkan **akun EdLink kamu sendiri**: tempel token 129
+   karakter dari DevTools `edlink.id`, atau isi email + password EdLink.
+3. Salin URL MCP dari dashboard: `https://<host>/mcp`.
+4. Di ChatGPT: `chatgpt.com/plugins` → tombol plus → **Add custom MCP server** →
+   tempel URL MCP → setujui halaman izin OAuth → **Create as a plugin**.
+5. Minta ChatGPT memanggil `edlink_setup_status`. Kalau jawabannya `perlu_setup: false`,
+   akunmu sudah nyambung.
+
+Isolasi yang berlaku di sana:
+
+- Setiap akun punya baris koneksi EdLink sendiri, dienkripsi Fernet dengan kunci di luar
+  database (mode 600).
+- Token/password EdLink tidak pernah dikirim ke model, tidak masuk log, tidak dicatat di
+  audit.
+- Tool tidak menerima `user_id` dari argumen; identitas diambil dari bearer token di
+  middleware. Satu user tidak bisa menyentuh data user lain.
+- Token MCP bisa dicabut kapan saja dari dashboard, dan `Putuskan EdLink` mematikan
+  koneksi sekaligus mencabut seluruh token.
+
+Kalau kamu tidak butuh akses jarak jauh, **jangan pakai server publik** — pasang versi
+lokal di bawah, itu lebih aman.
+
+Detail arsitektur, skema database, admin, dan batasan: [MULTIUSER.md](MULTIUSER.md).
 
 ---
 
@@ -30,7 +77,9 @@ Artinya:
 
 - Endpoint internal bisa berubah kapan saja.
 - Update frontend EdLink juga bisa menggeser nama route atau bentuk response.
-- Semua request tetap langsung ke `api.edlink.id`; kredensial tidak mampir ke server pihak ketiga.
+- Request data selalu langsung ke `api.edlink.id`. Di mode lokal kredensial tidak pernah
+  keluar dari mesinmu; di mode platform kredensial melewati server milikmu sendiri dan
+  disimpan terenkripsi per akun.
 - Kamu yang punya akun, kamu yang pegang kendali. `edlink_send_tugas` adalah aksi tulis.
 
 Pemetaan dilakukan dengan membaca bundle JavaScript yang dikirim ke browser, mencocokkan
@@ -70,6 +119,12 @@ Yang berhasil dipetakan:
 - **Jadwal & kelas** — hari ini, bulanan, daftar kelas.
 - **Notifikasi** — semua atau hanya yang belum dibaca.
 - **API explorer** — `edlink_api` buat endpoint yang belum dipetakan.
+- **Platform multi-user** — tiap orang daftar sendiri, koneksi EdLink terpisah dan
+  terenkripsi, admin panel untuk suspend/cabut token.
+- **OAuth 2.1 + PKCE** — ChatGPT dan klien lain connect tanpa menempel API key statis;
+  access token 30 hari, refresh token 90 hari dengan rotasi.
+- **Rate limit + audit** — signup, login, DCR, dan token endpoint dibatasi; audit event
+  tidak memuat nilai rahasia.
 
 ---
 
@@ -95,6 +150,10 @@ Yang berhasil dipetakan:
 | `edlink_setup_token(token)` | Simpan token OAuth/manual setelah divalidasi |
 | `edlink_setup_manual(email, password)` | Simpan kredensial email + password |
 | `edlink_login_status()` | Validasi token / kredensial yang tersimpan |
+
+Di mode platform, `edlink_setup_token` dan `edlink_setup_manual` menyimpan ke akun platform
+yang sedang memanggil (terenkripsi), bukan ke `config.json`. `edlink_setup_status` akan
+mengarahkan ke halaman dashboard, bukan meminta token lewat chat.
 
 ### Contoh output `edlink_tugas_terbaru`
 
@@ -127,7 +186,7 @@ Yang berhasil dipetakan:
 
 ---
 
-## Setup pertama kali (interaktif)
+## Setup lokal (stdio)
 
 1. Install dependencies:
 
