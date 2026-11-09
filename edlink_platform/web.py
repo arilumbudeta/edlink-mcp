@@ -209,6 +209,32 @@ def index(request: Request) -> Response:
 <p>Hubungkan akun EdLink-mu ke ChatGPT lewat MCP. Satu akun platform, satu akun EdLink,
 data terpisah dari pengguna lain.</p>
 <p><a href="/signup">Daftar</a> · <a href="/login">Masuk</a> · <a href="/docs">Dokumentasi</a></p>
+</div>
+
+<div class="card">
+<h2>Cara pakai</h2>
+<ol style="color:#a9b0bf;line-height:1.7;padding-left:18px">
+ <li>Daftar akun platform dengan email + password.</li>
+ <li>Di dashboard, tempel token EdLink (129 karakter dari DevTools <code>edlink.id</code>)
+     atau isi email + password EdLink-mu.</li>
+ <li>Salin URL MCP dari dashboard, lalu tambahkan sebagai custom MCP server di
+     <code>chatgpt.com/plugins</code>.</li>
+ <li>Setujui halaman izin sekali. Setelah itu ChatGPT memanggil 18 tool dengan
+     identitas akunmu.</li>
+</ol>
+</div>
+
+<div class="card">
+<h2>Yang dijaga</h2>
+<ul style="color:#a9b0bf;line-height:1.7;padding-left:18px">
+ <li>Kredensial EdLink disimpan terenkripsi per akun, kunci di luar database.</li>
+ <li>Token tidak pernah dikirim ke model, tidak masuk log, tidak dicatat di audit.</li>
+ <li>Tool tidak menerima <code>user_id</code> dari argumen; identitas dari token.</li>
+ <li>Satu akun tidak bisa membaca data akun lain. Terbukti lewat 41 pemeriksaan isolasi.</li>
+ <li>Token bisa dicabut kapan saja; memutuskan EdLink ikut mencabut semua token.</li>
+</ul>
+<p>Butuh keamanan maksimal dan hanya satu perangkat? Jalankan versi lokal (stdio) dari
+repo — tidak ada port terbuka dan kredensial tidak keluar dari komputermu.</p>
 </div>"""
     return page("EdLink MCP", body)
 
