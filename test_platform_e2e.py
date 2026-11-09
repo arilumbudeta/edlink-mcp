@@ -22,6 +22,8 @@ import httpx
 
 BASE = os.environ.get("PLATFORM_TEST_BASE", "http://localhost:8792")
 MCP = BASE + "/mcp"
+# Sama dengan flag di server. Saat 0, link token palsu harus ditolak.
+TEST_MODE = os.environ.get("PLATFORM_TEST_MODE") == "1"
 
 PASS: list[str] = []
 FAIL: list[str] = []
@@ -174,7 +176,12 @@ def main() -> int:
 
             # link token dummy
             r = alice.post(f"{BASE}/link", data={"token": "dummy-edlink-token-" + "x" * 110})
-            check("link token tersimpan", r.status_code == 302 and "ok=" in r.headers.get("location", ""))
+            loc = r.headers.get("location", "")
+            if TEST_MODE:
+                check("link token tersimpan (mode uji)", r.status_code == 302 and "ok=" in loc)
+            else:
+                # Tanpa mode uji, token palsu wajib ditolak sebelum masuk database.
+                check("token palsu ditolak saat link", r.status_code == 302 and "error=" in loc, loc[:60])
 
             dash = alice.get(f"{BASE}/dashboard")
             check("dashboard tampil", dash.status_code == 200)
@@ -271,7 +278,18 @@ def main() -> int:
                 result = alice_call.json().get("result", {})
                 content = result.get("content") or []
                 alice_text = content[0].get("text", "") if content else ""
-            check("alice melihat koneksinya sendiri", "perlu_setup" in alice_text and '"perlu_setup": false' in alice_text, alice_text[:80])
+            if TEST_MODE:
+                check(
+                    "alice melihat koneksinya sendiri",
+                    "perlu_setup" in alice_text and '"perlu_setup": false' in alice_text,
+                    alice_text[:80],
+                )
+            else:
+                check(
+                    "alice tetap belum terhubung (token palsu ditolak)",
+                    "perlu_setup" in alice_text and '"perlu_setup": true' in alice_text,
+                    alice_text[:80],
+                )
 
         # --- bob tidak bisa pakai token alice ---
         with httpx.Client(timeout=30, follow_redirects=False) as bob:

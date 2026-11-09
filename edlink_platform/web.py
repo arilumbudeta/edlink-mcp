@@ -7,6 +7,7 @@ Semua nilai yang dicetak lewat _esc(); tidak ada data rahasia di halaman.
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any
 
@@ -279,17 +280,25 @@ def dashboard(request: Request, user: Any) -> Response:
 <div class="card">
 <h2>Akun EdLink</h2>
 <p>Mode koneksi: <code>{_esc(conn['mode'] or '-')}</code></p>
+<p>Pakai email + password EdLink kamu di sini. Server yang login ke EdLink, jadi tidak perlu
+buka DevTools dan tidak perlu menempel token apa pun.</p>
 <form method="post" action="/link">
- <label>Token EdLink (129 karakter, dari DevTools edlink.id)</label>
- <textarea name="token" rows="3" placeholder="tempel token di sini" spellcheck="false"></textarea>
- <button type="submit">Simpan token</button>
+ <label>Email EdLink</label><input name="email" type="email" autocomplete="username" required>
+ <label>Password EdLink</label><input name="password" type="password" autocomplete="current-password" required>
+ <button type="submit">Hubungkan akun EdLink</button>
 </form>
 <details style="margin-top:18px">
- <summary style="cursor:pointer;color:#a9b0bf">Atau pakai email + password</summary>
+ <summary style="cursor:pointer;color:#a9b0bf">Akun EdLink-mu login lewat Google? tempel token</summary>
+ <p style="font-size:13px">EdLink tidak menyediakan OAuth untuk pihak ketiga, jadi akun yang
+ hanya punya login Google tidak bisa dihubungkan lewat tombol OAuth. Ambil token sekali:
+ buka <code>edlink.id</code>, login, lalu di DevTools console jalankan
+ <code class="mono" style="display:inline;padding:2px 6px">copy(helpers.getToken(document.cookie.match(/(?:^|; )token=([^;]+)/)[1]).token)</code>
+ lalu tempel di bawah. Token berlaku beberapa jam; selama kredensial tersimpan, server
+ memperbaruinya sendiri saat kedaluwarsa.</p>
  <form method="post" action="/link">
-  <label>Email EdLink</label><input name="email" type="email" autocomplete="username">
-  <label>Password EdLink</label><input name="password" type="password" autocomplete="current-password">
-  <button type="submit">Simpan &amp; login</button>
+  <label>Token EdLink (129 karakter)</label>
+  <textarea name="token" rows="3" placeholder="tempel token di sini" spellcheck="false"></textarea>
+  <button type="submit">Simpan token</button>
  </form>
 </details>
 <form method="post" action="/unlink" style="margin-top:16px">
@@ -322,23 +331,66 @@ async def link_post(request: Request, user: Any) -> Response:
     token = str(form.get("token") or "").strip()
     email = str(form.get("email") or "").strip()
     password = str(form.get("password") or "")
+    # Mode uji: lewati validasi ke EdLink supaya suite e2e bisa jalan tanpa
+    # kredensial asli. JANGAN diset di produksi.
+    test_mode = os.environ.get("EDLINK_PLATFORM_TEST_MODE") == "1"
+
+    if not db.rate_limit(f"edlink_link:{uid}", limit=20, window_seconds=900):
+        return RedirectResponse(
+            "/dashboard?error=" + _q("Terlalu banyak percobaan koneksi. Tunggu 15 menit."),
+            status_code=302,
+        )
 
     if token:
         if len(token) < 20 or len(token) > 400:
             return RedirectResponse("/dashboard?error=" + _q("Format token tidak wajar."), status_code=302)
+        # Validasi dulu: token mati/typo tidak boleh masuk database.
+        profile: Any = None
+        if not test_mode:
+            try:
+                import edlink_mcp
+
+                profile = await edlink_mcp._edlink_request(
+                    "user/profile", method="POST", body={}, token=token
+                )
+            except Exception:  # noqa: BLE001 — token dari user, lapor tanpa detail internal
+                db.audit(uid, "edlink.link_fail", "mode=token", _ip(request))
+                return RedirectResponse(
+                    "/dashboard?error=" + _q("Token ditolak EdLink. Ambil token baru lalu coba lagi."),
+                    status_code=302,
+                )
         store.save_connection(uid, "token", token=token)
+        store.write_token_cache(uid, token, extra={"mode": "token"})
         db.audit(uid, "edlink.link", "mode=token", _ip(request))
-        return RedirectResponse("/dashboard?ok=" + _q("Token EdLink disimpan."), status_code=302)
+        nama = (profile or {}).get("name") if isinstance(profile, dict) else None
+        pesan = "Akun EdLink terhubung." + (f" ({nama})" if nama else "")
+        return RedirectResponse("/dashboard?ok=" + _q(pesan), status_code=302)
 
     if email and password:
         store.save_connection(uid, "password", email=email, password=password)
+        if not test_mode:
+            try:
+                # Login sungguhan sekarang, jadi user tahu langsung berhasil atau tidak.
+                import edlink_mcp
+
+                await edlink_mcp._login()
+            except Exception:  # noqa: BLE001
+                store.disconnect(uid)
+                db.audit(uid, "edlink.link_fail", "mode=password", _ip(request))
+                return RedirectResponse(
+                    "/dashboard?error="
+                    + _q("Login EdLink gagal. Cek email/password. Kalau akunmu pakai Google, pakai tempel token."),
+                    status_code=302,
+                )
         db.audit(uid, "edlink.link", "mode=password", _ip(request))
         return RedirectResponse(
-            "/dashboard?ok=" + _q("Kredensial disimpan. Token akan diambil saat tool pertama dipanggil."),
+            "/dashboard?ok=" + _q("Akun EdLink terhubung dan login berhasil."),
             status_code=302,
         )
 
-    return RedirectResponse("/dashboard?error=" + _q("Isi token, atau email + password."), status_code=302)
+    return RedirectResponse(
+        "/dashboard?error=" + _q("Isi email + password EdLink, atau tempel token."), status_code=302
+    )
 
 
 async def unlink_post(request: Request, user: Any) -> Response:

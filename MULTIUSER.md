@@ -52,9 +52,28 @@ Di mode platform, tool setup ikut menyesuaikan:
 
 1. Buka `https://<host>/signup`, daftar dengan email + password (min 10 karakter).
 2. Login → dashboard.
-3. Hubungkan EdLink: tempel token 129 karakter, atau isi email + password EdLink.
+3. Hubungkan EdLink dengan **email + password EdLink** (server yang login, tanpa
+   DevTools). Token disimpan terenkripsi dan diperbarui otomatis saat expired.
+   Akun yang hanya punya login Google: tempel token sekali lewat bagian "tempel token".
 4. Di ChatGPT: **Add custom MCP server** → `https://<host>/mcp` → autentikasi OAuth.
 5. Halaman izin muncul sekali; setujui. Token platform diterbitkan dan dipakai ChatGPT.
+
+### Dua OAuth yang berbeda
+
+| OAuth | Alur | Status |
+| --- | --- | --- |
+| Platform ↔ ChatGPT/Claude | `/oauth/authorize` + PKCE + DCR milik platform ini | browser-based penuh |
+| Platform ↔ EdLink | tidak ada | EdLink tidak punya AS pihak ketiga |
+
+EdLink hanya punya `site/login` dan `auth/google` (EdLink adalah *client* Google, bukan
+server OAuth). Tidak ada authorization endpoint untuk pihak ketiga, jadi token EdLink
+tidak bisa didapat lewat redirect browser. Jalur resminya:
+
+- email + password EdLink → server login sendiri, token disimpan terenkripsi;
+- akun Google-only → tempel token sekali, lalu server yang mengurus pembaruan.
+
+Validasi saat link: token dicek ke `user/profile` dan password dicek dengan login
+sungguhan sebelum disimpan, jadi kredensial salah tidak pernah masuk database.
 
 ## Autentikasi
 
@@ -130,6 +149,7 @@ membaca token atau password user.
 | `EDLINK_PLATFORM_ADMIN_EMAIL` | tidak | bootstrap admin |
 | `EDLINK_PLATFORM_ADMIN_PASSWORD` | tidak | bootstrap admin |
 | `EDLINK_PLATFORM_ALLOW_HTTP` | tidak | `1` hanya untuk uji lokal |
+| `EDLINK_PLATFORM_TEST_MODE` | tidak | `1` hanya untuk suite uji: lewati validasi EdLink saat link. **Jangan di produksi.** |
 | `EDLINK_MCP_ALLOWED_HOSTS` | ya | host publik + localhost |
 | `EDLINK_MCP_PORT` | tidak | default 8765 |
 

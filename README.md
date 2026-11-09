@@ -37,15 +37,44 @@ https://8765-agqzr5ia5piewgnk2prlcfqhlm.instabox.tech
 Langkahnya, tanpa install apa pun:
 
 1. Buka `/signup` di host itu, daftar dengan email + password (minimal 10 karakter).
-2. Login, lalu di `/dashboard` hubungkan **akun EdLink kamu sendiri**: tempel token 129
-   karakter dari DevTools `edlink.id`, atau isi email + password EdLink.
+2. Login, lalu di `/dashboard` hubungkan akun EdLink kamu sendiri dengan
+   **email + password EdLink**. Server yang login ke EdLink, jadi tidak perlu
+   buka DevTools dan tidak perlu menempel token.
 3. Salin URL MCP dari dashboard: `https://<host>/mcp`.
 4. Di ChatGPT: `chatgpt.com/plugins` → tombol plus → **Add custom MCP server** →
    tempel URL MCP → setujui halaman izin OAuth → **Create as a plugin**.
 5. Minta ChatGPT memanggil `edlink_setup_status`. Kalau jawabannya `perlu_setup: false`,
    akunmu sudah nyambung.
 
-Isolasi yang berlaku di sana:
+### Kenapa tidak ada tombol "Login dengan Google" untuk EdLink?
+
+Ada **dua OAuth berbeda** di sini, dan cuma satu yang bisa browser-based penuh:
+
+| OAuth | Pihak yang terlibat | Status |
+|---|---|---|
+| MCP ↔ ChatGPT/Claude | klien MCP → server ini (`/oauth/authorize`, PKCE, DCR) | browser-based, sudah jalan |
+| Akun platform ↔ akun EdLink | server ini → EdLink | **tidak ada OAuth-nya** |
+
+EdLink tidak menyediakan authorization server untuk pihak ketiga. Yang ada di EdLink
+hanya `site/login` (email + password) dan `auth/google` (EdLink sebagai *client* Google,
+bukan server OAuth). Tidak ada `authorization_endpoint`, tidak ada DCR, tidak ada
+endpoint untuk mendaftarkan aplikasi kita. Artinya tidak ada token yang bisa diterbitkan
+EdLink ke platform ini lewat redirect browser — jadi tombol "Hubungkan dengan Google"
+tidak bisa dibuat, bukan karena belum dikerjakan, tapi karena sisi EdLink tidak punya
+mekanismenya.
+
+Karena itu jalurnya:
+
+- **Punya password EdLink** → isi email + password di dashboard. Server login sendiri,
+  token disimpan terenkripsi, diperbarui otomatis saat kedaluwarsa. Nol DevTools.
+- **Login EdLink pakai Google** (tidak punya password) → tempel token sekali dari
+  DevTools. Ini satu-satunya jalan, dan hanya perlu sekali karena setelah itu server
+  memegang kredensialnya.
+
+Kalau nanti EdLink membuka OAuth pihak ketiga, tombolnya tinggal ditambahkan di
+`/oauth/authorize` milik platform dan alur token-paste bisa dihapus.
+
+Isolasi yang berlaku di server publik:
 
 - Setiap akun punya baris koneksi EdLink sendiri, dienkripsi Fernet dengan kunci di luar
   database (mode 600).
