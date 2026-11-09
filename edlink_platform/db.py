@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_refresh_user ON oauth_refresh_tokens(user_id);
 
+-- Rate limit per identitas: satu baris per (bucket, key). Bucket memisahkan
+-- jenis aksi (login, signup, link, token, mcp) supaya kuota satu aksi tidak
+-- memakan kuota aksi lain. Key berisi identitas yang relevan untuk bucket itu:
+-- email|ip untuk login, user_id untuk aksi yang butuh sesi, client_id untuk
+-- OAuth. Admin tidak pernah dicatat oleh pemanggil, jadi tidak pernah kena.
+CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket   TEXT NOT NULL,
+    key      TEXT NOT NULL,
+    count    INTEGER NOT NULL DEFAULT 0,
+    reset_at REAL NOT NULL,
+    PRIMARY KEY (bucket, key)
+);
+
 CREATE TABLE IF NOT EXISTS audit_events (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     ts      REAL NOT NULL,
@@ -134,6 +147,8 @@ def init_db() -> None:
     conn.executescript(SCHEMA)
     # audit_events dipakai untuk forensik, bukan arsip permanen. Simpan 90 hari.
     conn.execute("DELETE FROM audit_events WHERE ts < ?", (now() - 90 * 86400,))
+    # Baris rate limit yang window-nya lewat tidak berguna lagi.
+    conn.execute("DELETE FROM rate_limits WHERE reset_at < ?", (now(),))
 
 
 @contextmanager
@@ -173,3 +188,70 @@ def audit(user_id: str | None, action: str, detail: str = "", ip: str = "") -> N
             "INSERT INTO audit_events (ts, user_id, action, detail, ip) VALUES (?,?,?,?,?)",
             (now(), user_id, action[:80], detail[:500], ip[:64]),
         )
+
+
+def rate_limit(bucket: str, key: str, limit: int, window: int) -> tuple[bool, int]:
+    """Catat satu percobaan untuk (bucket, key).
+
+    Window tetap: hitungan kembali ke nol saat reset_at lewat. Percobaan yang
+    sudah diblokir tetap menambah count, tapi tidak menggeser reset_at, jadi
+    penyerang tidak bisa memperpanjang cooldown dirinya sendiri-sendiri.
+
+    :return: (boleh_lanjut, sisa_detik_cooldown)
+    """
+    if limit <= 0:
+        return True, 0
+    ts = now()
+    ident = str(key)[:120]
+    with tx() as conn:
+        row = conn.execute(
+            "SELECT count, reset_at FROM rate_limits WHERE bucket=? AND key=?",
+            (bucket, ident),
+        ).fetchone()
+        if row is None or row["reset_at"] <= ts:
+            conn.execute(
+                "INSERT INTO rate_limits (bucket, key, count, reset_at) VALUES (?,?,1,?) "
+                "ON CONFLICT(bucket, key) DO UPDATE SET count=1, reset_at=excluded.reset_at",
+                (bucket, ident, ts + window),
+            )
+            return True, 0
+        count = int(row["count"]) + 1
+        conn.execute(
+            "UPDATE rate_limits SET count=? WHERE bucket=? AND key=?",
+            (count, bucket, ident),
+        )
+        if count <= limit:
+            return True, 0
+        return False, max(1, int(row["reset_at"] - ts))
+
+
+def rate_limit_state(bucket: str, key: str) -> tuple[int, int]:
+    """(count, sisa_detik) untuk ditampilkan di admin. Tanpa efek samping."""
+    row = q1(
+        "SELECT count, reset_at FROM rate_limits WHERE bucket=? AND key=?",
+        (bucket, str(key)[:120]),
+    )
+    if row is None:
+        return 0, 0
+    return int(row["count"]), max(0, int(row["reset_at"] - now()))
+
+
+def rate_limit_clear(bucket: str = "", key: str = "") -> int:
+    """Hapus hitungan. Tanpa argumen = bersihkan semua bucket."""
+    with tx() as conn:
+        if bucket and key:
+            cur = conn.execute(
+                "DELETE FROM rate_limits WHERE bucket=? AND key=?", (bucket, str(key)[:120])
+            )
+        elif bucket:
+            cur = conn.execute("DELETE FROM rate_limits WHERE bucket=?", (bucket,))
+        else:
+            cur = conn.execute("DELETE FROM rate_limits")
+        return cur.rowcount
+
+
+def rate_limit_prune() -> int:
+    """Buang baris yang window-nya sudah lewat. Dipanggil saat startup."""
+    with tx() as conn:
+        cur = conn.execute("DELETE FROM rate_limits WHERE reset_at < ?", (now(),))
+        return cur.rowcount

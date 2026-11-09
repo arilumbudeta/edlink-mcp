@@ -23,7 +23,7 @@ from urllib.parse import quote, urlencode, urlparse
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import db, security, store
+from . import db, limits, security, store
 
 SCOPES = ["edlink.read", "edlink.write"]
 
@@ -81,6 +81,15 @@ def _ip(request: Request) -> str:
 
 async def register_client(request: Request) -> Response:
     """Dynamic Client Registration (RFC 7591) sederhana."""
+    allowed, wait = limits.check(limits.DCR, _ip(request))
+    if not allowed:
+        response = JSONResponse(
+            {"error": "temporarily_unavailable", "error_description": limits.message(wait)},
+            status_code=429,
+        )
+        response.headers["Retry-After"] = str(max(1, int(wait)))
+        return response
+
     try:
         body: Any = await request.json()
     except Exception:
@@ -319,6 +328,26 @@ async def authorize(request: Request, session_user: Any) -> Response:
     return RedirectResponse(f"{redirect_uri}{sep}{urlencode(params_out)}", status_code=302)
 
 
+def _token_owner_is_admin(form, grant: str) -> bool:
+    """Tebak pemilik grant sebelum token diterbitkan, untuk pengecualian admin."""
+    try:
+        if grant == "refresh_token":
+            row = security.refresh_token_row(str(form.get("refresh_token") or ""))
+        elif grant == "authorization_code":
+            row = db.q1(
+                "SELECT user_id FROM oauth_authorization_codes WHERE code = ?",
+                (security.sha256_hex(str(form.get("code") or "")),),
+            )
+        else:
+            return False
+    except Exception:  # noqa: BLE001 — kegagalan lookup bukan alasan menolak
+        return False
+    if row is None:
+        return False
+    user = security.get_user(row["user_id"])
+    return bool(user is not None and user["is_admin"])
+
+
 async def token(request: Request) -> Response:
     try:
         form = await request.form()
@@ -326,6 +355,18 @@ async def token(request: Request) -> Response:
         return JSONResponse({"error": "invalid_request"}, status_code=400)
 
     grant = str(form.get("grant_type") or "")
+    key = str(form.get("client_id") or "") or _ip(request)
+    allowed, wait = limits.check(
+        limits.TOKEN, key, is_admin=_token_owner_is_admin(form, grant)
+    )
+    if not allowed:
+        response = JSONResponse(
+            {"error": "slow_down", "error_description": limits.message(wait)},
+            status_code=429,
+        )
+        response.headers["Retry-After"] = str(max(1, int(wait)))
+        return response
+
     base = _base(request)
     if grant == "authorization_code":
         return _authorization_code_grant(form, base)

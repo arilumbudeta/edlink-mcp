@@ -23,7 +23,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 
-from . import db, identity, oauth, security, store, web
+from . import db, identity, limits, oauth, security, store, web
 
 
 class _McpRootAlias:
@@ -101,6 +101,22 @@ class IdentityMiddleware:
                     f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource", '
                     'scope="edlink.read edlink.write"'
                 )
+                await response(scope, receive, send)
+                return
+
+            # Kuota per user, bukan per IP: satu user yang banjir request tidak
+            # memperlambat user lain di belakang IP yang sama. Admin bebas.
+            allowed, wait = limits.check(limits.MCP, ident.user_id, is_admin=ident.is_admin)
+            if not allowed:
+                payload = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32000, "message": limits.message(wait)},
+                    }
+                )
+                response = Response(payload, status_code=429, media_type="application/json")
+                response.headers["Retry-After"] = str(max(1, int(wait)))
                 await response(scope, receive, send)
                 return
         else:

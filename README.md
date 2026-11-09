@@ -1,22 +1,21 @@
 # EdLink MCP Server
 
-**MCP server untuk EdLink (edlink.id / SEVIMA)** — biar agent coding dan ChatGPT bisa lihat
-tugas, jadwal, kelas, notifikasi, **membaca materi kuliah**, **mengerjakan tugas, dan
-mengirimnya** langsung dari akun masing-masing.
+**MCP server untuk EdLink (edlink.id / SEVIMA)** — biar chat agent yang mendukung MCP
+(ChatGPT, Claude, dan klien lain) bisa lihat tugas, jadwal, kelas, notifikasi,
+**membaca materi kuliah**, **mengerjakan tugas, dan mengirimnya** langsung dari akun
+masing-masing.
 
-Ada dua bentuk deployment:
+Ada dua metode untuk menyambungkan MCP:
 
-| Bentuk | Untuk siapa | Kredensial |
+| Metode | Untuk siapa | Kredensial |
 |---|---|---|
-| **Platform publik** (`platform_main.py`) | siapa pun yang mau pakai dari ChatGPT atau perangkat lain | akun platform sendiri, akun EdLink sendiri, terenkripsi per user |
-| **Lokal stdio** (`edlink_mcp.py`) | satu orang, satu mesin, keamanan maksimal | `config.json` di komputermu sendiri |
+| **Public server** (HTTP) — praktis | siapa pun yang mau langsung pakai dari ChatGPT, Claude, atau perangkat lain | akun platform sendiri + akun EdLink sendiri, terenkripsi per user |
+| **Lokal** (stdio) | satu orang, satu mesin, keamanan maksimal | `config.json` di komputermu sendiri |
 
-Dua-duanya menjalankan 20 tool yang sama. Yang berbeda cuma di mana kredensial disimpan dan
-siapa yang boleh memanggil.
+Dua-duanya menjalankan 20 tool yang sama. Yang berbeda cuma di mana kredensial
+disimpan dan siapa yang boleh memanggil.
 
-> **Lokal tetap yang paling aman.** Tidak ada port terbuka, tidak ada URL yang bisa bocor,
-> token EdLink tidak pernah meninggalkan komputer sendiri. Pakai platform publik kalau kamu
-> memang butuh akses dari ChatGPT atau dari perangkat lain.
+> **Mau praktis: pakai public server. Ragu soal keamanan: jalankan lokal.**
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-stdio%20%2B%20streamable%20HTTP-6E56CF?style=for-the-badge)
@@ -26,15 +25,15 @@ siapa yang boleh memanggil.
 
 ---
 
-## Pakai server publik (multi-user)
+## Metode 1 — public server (praktis)
 
-Server contoh berjalan di:
+Kalau mau langsung pakai tanpa install apa pun, sambungkan ke server publik:
 
 ```
 https://8765-agqzr5ia5piewgnk2prlcfqhlm.instabox.tech
 ```
 
-Langkahnya, tanpa install apa pun:
+Langkahnya:
 
 1. Buka `/signup` di host itu, daftar dengan email + password (minimal 10 karakter).
 2. Login, lalu di `/dashboard` hubungkan akun EdLink kamu sendiri. Jalur utamanya
@@ -42,10 +41,23 @@ Langkahnya, tanpa install apa pun:
    Akun yang cuma punya login Google pakai token sekali, lihat
    [Dua jalur koneksi EdLink](#dua-jalur-koneksi-edlink).
 3. Salin URL MCP dari dashboard: `https://<host>/mcp`.
-4. Di ChatGPT: `chatgpt.com/plugins` → tombol plus → **Add custom MCP server** →
-   tempel URL MCP → setujui halaman izin OAuth → **Create as a plugin**.
-5. Minta ChatGPT memanggil `edlink_setup_status`. Kalau jawabannya `perlu_setup: false`,
+4. Tempel URL itu di chat agent yang kamu pakai — apa pun yang bisa menerima MCP
+   server, bukan cuma ChatGPT. Contoh:
+   - **ChatGPT**: `chatgpt.com/plugins` → tombol plus → **Add custom MCP server** →
+     tempel URL → setujui halaman izin OAuth → **Create as a plugin**.
+   - **Claude**: **Settings → Connectors → Add custom connector** → tempel URL →
+     selesaikan OAuth lewat tombol connect.
+   - **Cursor / OpenCode / ZCode / Cline / klien lain**: tambahkan sebagai MCP server
+     tipe `http`/`streamable` dengan URL yang sama. Klien yang mendukung OAuth akan
+     membuka halaman izin sendiri; yang tidak mendukung OAuth bisa memakai
+     `Authorization: Bearer <token>` dari dashboard.
+5. Minta agent memanggil `edlink_setup_status`. Kalau jawabannya `perlu_setup: false`,
    akunmu sudah nyambung.
+
+Yang menentukan bisa atau tidaknya sebuah agent memakai server ini bukan namanya,
+tapi **dukungan MCP di klien itu**: transport Streamable HTTP, dan idealnya OAuth
+untuk ambil token sendiri. Selama itu ada, agent mana pun bisa memanggil 20 tool
+di bawah — lihat [menghubungkan chat agent ke platform](#menghubungkan-chat-agent-ke-platform).
 
 ### Dua jalur koneksi EdLink
 
@@ -54,8 +66,9 @@ Langkahnya, tanpa install apa pun:
 | **Email + password EdLink** (utama) | akun EdLink dengan password | server login sendiri ke `site/login`, token disimpan terenkripsi, diperbarui otomatis saat expired |
 | **Token manual** | akun EdLink yang login lewat Google (tanpa password) | kamu ambil token sekali dari DevTools, tempel di dashboard |
 
-Bedanya dengan OAuth ChatGPT: server ini **jadi** authorization server untuk klien MCP
-(`/oauth/authorize`, PKCE, DCR). Untuk EdLink peran itu tidak ada — EdLink hanya
+Bedanya dengan OAuth yang biasa dipakai klien seperti ChatGPT: server ini **jadi**
+authorization server untuk klien MCP (`/oauth/authorize`, PKCE, DCR). Untuk EdLink
+peran itu tidak ada — EdLink hanya
 menyediakan `site/login` dan `auth/google` (EdLink sebagai *client* Google), tanpa
 authorization endpoint untuk pihak ketiga. Jadi tidak ada redirect browser yang bisa
 mengembalikan token EdLink ke server ini; yang bisa dilakukan cuma login langsung atau
@@ -159,10 +172,10 @@ Yang berhasil dipetakan:
 - **API explorer** — `edlink_api` buat endpoint yang belum dipetakan.
 - **Platform multi-user** — tiap orang daftar sendiri, koneksi EdLink terpisah dan
   terenkripsi, admin panel untuk suspend/cabut token.
-- **OAuth 2.1 + PKCE** — ChatGPT dan klien lain connect tanpa menempel API key statis;
-  access token 30 hari, refresh token 90 hari dengan rotasi.
+- **OAuth 2.1 + PKCE** — ChatGPT, Claude, dan klien MCP lain connect tanpa menempel
+  API key statis; access token 30 hari, refresh token 90 hari dengan rotasi.
 - **Audit** — login, link/unlink EdLink, dan OAuth dicatat tanpa nilai rahasia.
-  Rate limit dimatikan (lihat catatan keamanan).
+  Rate limit per identitas aktif (lihat catatan keamanan).
 
 ---
 
@@ -233,9 +246,9 @@ URL eksternal**. Kalau kamu kasih link Google Cloud Storage berisi PDF, Claude m
 *"Claude can only open links from the conversation or ones you approve"*, dan ChatGPT
 sering gagal di jaringan. Link-nya benar, yang tidak bisa adalah membukanya dari sisi model.
 
-Solusinya: unduhan dipindah ke server. Tool yang jalan di mesinmu (atau di VM platform)
-mengambil byte berkas, mengekstrak teksnya, lalu mengembalikan **teks polos**. Model tidak
-pernah menyentuh URL, jadi aturan klien tidak pernah kena.
+Solusinya: unduhan dipindah ke sisi server. Tool yang jalan di server (atau di mesinmu
+saat mode lokal) mengambil byte berkas, mengekstrak teksnya, lalu mengembalikan
+**teks polos**. Model tidak pernah menyentuh URL, jadi aturan klien tidak pernah kena.
 
 ### Alur
 
@@ -285,7 +298,11 @@ terunduh dan tersimpan, tapi `teks` kosong dan ada catatan di `catatan`.
 
 ---
 
-## Setup lokal (stdio)
+## Metode 2 — lokal (stdio)
+
+Paling aman: server berjalan di komputermu, tidak ada port yang terbuka, tidak ada
+URL yang bisa bocor, token EdLink tidak pernah keluar dari mesin. Pilihan yang tepat
+kalau kamu hanya memakai satu perangkat.
 
 1. Install dependencies:
 
@@ -398,6 +415,22 @@ Saat user bilang "kerjakan tugas terbaru dan send":
 
 ## Daftarkan ke client MCP
 
+### Remote HTTP — berlaku untuk semua klien
+
+Cara paling universal: tambahkan `https://<host>/mcp` sebagai MCP server tipe
+HTTP/streamable di klien mana pun. Tidak perlu Python, tidak perlu repo ini di
+mesinmu.
+
+| Klien | Di mana |
+|---|---|
+| ChatGPT | `chatgpt.com/plugins` → plus → **Add custom MCP server** |
+| Claude | **Settings → Connectors → Add custom connector** |
+| Cursor | `Settings → MCP → Add new MCP server` (type `http`) |
+| OpenCode | `mcp.servers` di `opencode.json` (lihat di bawah) |
+| ZCode / Cline / Continue | menu MCP masing-masing, type `http` |
+
+Klien yang belum mendukung OAuth: kirim `Authorization: Bearer <token>`.
+
 ### OpenCode
 
 Edit `~/.config/opencode/opencode.json`:
@@ -491,32 +524,16 @@ Kalau token expired dan kamu tidak mau lewat `edlink_login_oauth_link()`:
 
 ---
 
-## Deploy publik (Streamable HTTP)
+## Menjalankan server sendiri (opsional)
 
-Ada dua cara menjalankan server di jaringan:
+Ringkasnya: mau praktis — pakai public server di Metode 1. Ragu soal keamanan —
+jalankan lokal (Metode 2). Kalau masih ragu setelah itu, tetap lokal.
 
-1. **Single-user HTTP** — `edlink_mcp.py` dengan `EDLINK_MCP_TRANSPORT=http`.
-   Satu akun EdLink (punyamu), satu token. Cocok untuk akses pribadi.
-2. **Platform multi-user** — `platform_main.py`. Siapa pun bisa daftar, masing-masing
-   menghubungkan akun EdLink sendiri, kredensial terpisah dan terenkripsi.
-   Ini yang dipakai untuk ChatGPT. Detail: [MULTIUSER.md](MULTIUSER.md).
+Bagian ini hanya perlu kalau kamu mau menyalakan server ini di mesin atau host
+milikmu sendiri, entah sebagai platform multi-user atau single-user HTTP. Kalau
+memakai server publik yang sudah ada, lewati saja.
 
-### Lokal atau publik? Pilih salah satu
-
-**Local MCP (stdio) — paling aman.** Server jalan di mesinmu, tidak ada port
-yang terbuka, tidak ada URL yang bisa bocor. Token EdLink tidak pernah keluar
-dari komputer sendiri. Ini pilihan yang dipakai kalau kamu hanya memakai satu
-perangkat.
-
-**Public URL MCP — praktis.** Server jalan di VM dan bisa diakses dari mana
-saja, termasuk ChatGPT. Lebih gampang, tapi URL-nya bisa dipakai siapa pun yang
-tahu alamatnya, jadi seluruh isi EdLink-mu ikut terbuka. Pakai ini kalau kamu
-butuh akses jarak jauh dan sudah paham risikonya.
-
-**Ringkas:** lokal untuk keamanan maksimal, publik untuk kemudahan. Kalau ragu,
-pakai lokal.
-
-### Menjalankan single-user HTTP
+**Single-user HTTP**
 
 ```bash
 export EDLINK_MCP_TRANSPORT=http
@@ -542,29 +559,66 @@ python platform_main.py
 ```
 
 Endpoint MCP `POST /mcp`, halaman web `/signup`, `/login`, `/dashboard`, `/admin`.
-Autentikasi memakai OAuth 2.1 dengan PKCE, jadi klien seperti ChatGPT bisa
-menghubungkan akunnya sendiri.
+Autentikasi memakai OAuth 2.1 dengan PKCE, jadi klien mana pun yang mendukung
+OAuth bisa menghubungkan akunnya sendiri.
 
-### Menghubungkan ChatGPT ke platform
+### Menghubungkan chat agent ke platform
+
+Berlaku untuk agent apa pun yang bisa menerima MCP server. **ChatGPT dan Claude
+adalah dua contoh**, bukan satu-satunya — apa pun yang mendukung Streamable HTTP
+dan OAuth bisa memakai 20 tool di sini.
+
+**Langkah umum (semua klien)**
 
 1. Buka `https://<host>/signup`, daftar akun platform, lalu login.
 2. Di `/dashboard`, tempel token EdLink (129 karakter, dari DevTools `edlink.id`)
    atau pilih email + password EdLink. Data ini disimpan terenkripsi, hanya
    untuk akunmu.
 3. Salin URL MCP yang tertulis di dashboard: `https://<host>/mcp`.
-4. Di ChatGPT buka [chatgpt.com/plugins](https://chatgpt.com/plugins), tekan
-   tombol plus, lalu **Add custom MCP server**.
-5. Isi nama dan deskripsi, lalu di bagian **Connection** tempel URL MCP
-   (termasuk path `/mcp`).
-6. Di bagian authentication, selesaikan alur OAuth: halaman izin platform
-   terbuka sekali, setujui, dan ChatGPT menerima token untuk akunmu.
-   Baca peringatan risiko yang muncul, lalu **I understand and want to continue**.
-7. Tekan **Create as a plugin**, lalu periksa daftar tool yang ditemukan.
-8. Uji dengan meminta ChatGPT memanggil `edlink_setup_status` — hasilnya harus
+4. Tambahkan URL itu sebagai MCP server di klien, lalu selesaikan OAuth.
+5. Uji dengan meminta agent memanggil `edlink_setup_status` — hasilnya harus
    `perlu_setup: false` kalau koneksi EdLink sudah tersimpan.
 
-Kebijakan akun/workspace bisa memblokir custom MCP server; kalau tombolnya
-tidak ada, fitur itu dimatikan di workspace tersebut.
+**ChatGPT**
+
+1. Buka [chatgpt.com/plugins](https://chatgpt.com/plugins), tekan tombol plus,
+   lalu **Add custom MCP server**.
+2. Isi nama dan deskripsi, lalu di bagian **Connection** tempel URL MCP
+   (termasuk path `/mcp`).
+3. Di bagian authentication, selesaikan alur OAuth: halaman izin platform
+   terbuka sekali, setujui, dan ChatGPT menerima token untuk akunmu.
+   Baca peringatan risiko yang muncul, lalu **I understand and want to continue**.
+4. Tekan **Create as a plugin**, lalu periksa daftar tool yang ditemukan.
+5. Minta ChatGPT memanggil `edlink_setup_status`.
+
+**Claude**
+
+1. Buka **Settings → Connectors → Add custom connector**.
+2. Tempel URL MCP (termasuk path `/mcp`), lalu simpan.
+3. Klik **Connect**. Halaman izin platform terbuka sekali; setujui, dan Claude
+   menerima token untuk akunmu.
+4. Di kolom chat, buka menu tools dan pastikan server EdLink muncul dengan
+   20 tool.
+5. Minta Claude memanggil `edlink_setup_status`.
+
+Claude web dan desktop memakai jalur yang sama. Untuk pemakaian satu mesin,
+Claude Desktop juga bisa menjalankan mode lokal stdio lewat
+`claude_desktop_config.json` seperti di bagian [Daftarkan ke client MCP](#daftarkan-ke-client-mcp).
+
+**Klien lain**
+
+Cursor, OpenCode, ZCode, Cline, Continue, dan sejenisnya: tambahkan sebagai MCP
+server tipe `http`/`streamable` dengan URL `https://<host>/mcp`. Klien yang
+mendukung OAuth akan membuka halaman izin sendiri; yang belum mendukung OAuth
+bisa memakai bearer token dari dashboard:
+
+```text
+Authorization: Bearer <token-platform-kamu>
+```
+
+Kebijakan akun/workspace bisa memblokir connector MCP; kalau tombolnya tidak ada,
+fitur itu dimatikan di workspace tersebut. Agent command-line yang tidak punya UI
+OAuth tetap bisa jalan lewat bearer token di atas.
 
 Setiap akun hanya melihat data EdLink miliknya sendiri. Tool tidak pernah
 menerima `user_id` dari argumen; identitas ditentukan dari token di
@@ -577,10 +631,10 @@ lewat refresh token (90 hari, diputar setiap pemakaian).
    constant-time. Untuk MCP Inspector, Codex, atau skrip sendiri.
 2. **Proxy-trust** — `EDLINK_MCP_TRUST_PROXY_AUTH=1` mematikan pemeriksaan
    bearer karena gerbang auth ada di reverse proxy. Dipakai untuk ChatGPT,
-   yang tidak bisa mengirim API key statis.
+   Claude web, dan klien lain yang tidak bisa mengirim API key statis.
 
-Variabel lengkap ada di [.env.example](.env.example), langkah deployment dan
-integrasi ChatGPT ada di [DEPLOYMENT.md](DEPLOYMENT.md).
+Variabel lengkap ada di [.env.example](.env.example); langkah deployment dan
+integrasi klien (ChatGPT, Claude, Cursor) ada di [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
@@ -590,7 +644,7 @@ integrasi ChatGPT ada di [DEPLOYMENT.md](DEPLOYMENT.md).
 python -c "import edlink_mcp; print('import ok')"
 python test_mcp_smoke.py      # list semua tools (harus 20)
 python test_mcp_call.py       # panggil edlink_login_status
-python -m unittest test_platform_unit -v   # 46 test helper + OAuth + store
+python -m unittest test_platform_unit -v   # 54 test helper + OAuth + store + rate limit
 ```
 
 Setelah terdaftar, tanya agent:
@@ -652,9 +706,23 @@ Beberapa catatan hasil pemetaan yang tidak kelihatan dari nama route:
   hanya ke `api.edlink.id`.
 - **Platform publik**: kredensial EdLink dienkripsi per akun (Fernet, kunci di file
   terpisah mode 600), password platform di-hash Argon2id, tidak ada admin default.
-- **Rate limit dimatikan** di server publik ini: signup, login, DCR, token, dan link
-  EdLink tidak dibatasi. Efeknya brute force password platform dan spam signup jadi
-  mungkin. Nyalakan lagi kalau server dibuka untuk khalayak luas.
+- **Rate limit per identitas** — kuota dihitung per user atau per IP, bukan global,
+  jadi satu user yang membanjiri server tidak memperlambat user lain. Angka lengkap
+  ada di tabel di bawah; **akun admin tidak pernah dihitung** supaya pemilik server
+  tidak bisa terkunci dari panelnya sendiri.
+
+  | Aksi | Kunci | Limit | Window |
+  |---|---|---|---|
+  | `signup` | IP | 5 | 1 jam |
+  | `login` | email \| IP | 10 | 15 menit |
+  | `link` (hubungkan EdLink) | user_id | 10 | 10 menit |
+  | `dcr` (registrasi klien OAuth) | IP | 20 | 1 jam |
+  | `token` | client_id | 120 | 5 menit |
+  | `mcp` (panggilan tool) | user_id | 600 | 1 menit |
+
+  Pelanggaran dibalas `429` dengan header `Retry-After`. Hitungan disimpan di tabel
+  `rate_limits` dan dibersihkan otomatis saat startup. Admin bisa menghapus hitungan
+  satu user dari panel `/admin` lewat aksi **clear rate limit**.
 - **Mode token EdLink tidak auto-refresh.** Kalau token expired, tool meminta token baru;
   ambil ulang lewat DevTools seperti di README. Mode email+password yang memperbarui sendiri.
 - `edlink_send_tugas` adalah aksi tulis. Tool ini menghormati `submissionGate` dan

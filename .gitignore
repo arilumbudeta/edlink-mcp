@@ -32,3 +32,25 @@ node_modules/
 # log & os
 *.log
 .DS_Store
+
+# laporan sesi / catatan kerja — dokumen kerja, bukan bagian dari proyek
+LAPORAN-*.md
+CATATAN-*.md
+*.TODO
+*.md.TODO
+
+# database & artefak uji lokal
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# folder kerja sementara
+scratch/
+tmp/
+experiments/

@@ -374,15 +374,25 @@ def main() -> int:
             r = bob2.get(f"{BASE}/admin")
             check("non-admin ditolak 403", r.status_code == 403)
 
-        # --- tidak ada rate limit (dimatikan atas permintaan owner) ---
-        blocked = False
+        # --- rate limit per user / per IP (admin dikecualikan) ---
         with httpx.Client(timeout=30, follow_redirects=False) as rl:
-            for _ in range(15):
+            codes = []
+            retry_header = ""
+            for _ in range(14):
                 r = rl.post(f"{BASE}/login", data={"email": "nobody@test.local", "password": "wrong-password"})
+                codes.append(r.status_code)
                 if r.status_code == 429:
-                    blocked = True
+                    retry_header = r.headers.get("retry-after", "")
                     break
-        check("tidak ada blokir rate limit di login", not blocked)
+        check("login non-admin kena 429 setelah limit", 429 in codes, str(sorted(set(codes))))
+        check("429 menyertakan Retry-After", retry_header.isdigit() and int(retry_header) > 0, retry_header)
+
+        with httpx.Client(timeout=30, follow_redirects=False) as radm:
+            adm_codes = [
+                radm.post(f"{BASE}/login", data={"email": admin_email, "password": "salah-password"}).status_code
+                for _ in range(14)
+            ]
+        check("admin tidak pernah kena rate limit", 429 not in adm_codes, str(sorted(set(adm_codes))))
 
         # --- health ---
         h = anon.get(f"{BASE}/health")

@@ -15,7 +15,7 @@ _TMP = tempfile.mkdtemp(prefix="edlink-platform-test-")
 os.environ["EDLINK_PLATFORM_DB"] = str(Path(_TMP) / "test.db")
 os.environ["EDLINK_PLATFORM_KEY_FILE"] = str(Path(_TMP) / "test.key")
 
-from edlink_platform import crypto, db, identity, security, store  # noqa: E402
+from edlink_platform import crypto, db, identity, limits, security, store  # noqa: E402
 
 
 class CryptoAndStorageTests(unittest.TestCase):
@@ -393,6 +393,83 @@ class EdLinkLoginShapeTests(unittest.TestCase):
         self.assertEqual(token, "z" * 96)
         self.assertEqual(seen["path"], "site/login")
         self.assertNotIn("device", seen["body"])
+
+
+class RateLimitTests(unittest.TestCase):
+    """Kuota per identitas + pengecualian admin."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        db.init_db()
+
+    def setUp(self) -> None:
+        self.bucket = "test-" + db.new_id()
+        db.rate_limit_clear(self.bucket)
+
+    def tearDown(self) -> None:
+        db.rate_limit_clear(self.bucket)
+
+    def test_allows_up_to_limit_then_blocks(self) -> None:
+        for _ in range(3):
+            allowed, wait = db.rate_limit(self.bucket, "k", 3, 60)
+            self.assertTrue(allowed)
+            self.assertEqual(wait, 0)
+        allowed, wait = db.rate_limit(self.bucket, "k", 3, 60)
+        self.assertFalse(allowed)
+        self.assertGreaterEqual(wait, 1)
+        self.assertLessEqual(wait, 61)
+
+    def test_buckets_and_keys_are_independent(self) -> None:
+        for _ in range(2):
+            db.rate_limit(self.bucket, "satu", 2, 60)
+        blocked, _ = db.rate_limit(self.bucket, "satu", 2, 60)
+        self.assertFalse(blocked)
+        other_key, _ = db.rate_limit(self.bucket, "dua", 2, 60)
+        self.assertTrue(other_key)
+        other_bucket, _ = db.rate_limit(self.bucket + "-lain", "satu", 2, 60)
+        self.assertTrue(other_bucket)
+
+    def test_window_resets(self) -> None:
+        db.rate_limit(self.bucket, "w", 1, -1)  # window sudah lewat sejak awal
+        allowed, _ = db.rate_limit(self.bucket, "w", 1, 60)
+        self.assertTrue(allowed)
+
+    def test_admin_bypass_does_not_count(self) -> None:
+        for _ in range(50):
+            allowed, wait = limits.check(limits.LOGIN, "admin@test.local|1.2.3.4", is_admin=True)
+            self.assertTrue(allowed)
+            self.assertEqual(wait, 0)
+        # Tidak ada baris tercatat untuk admin.
+        self.assertEqual(db.rate_limit_state(limits.LOGIN[0], "admin@test.local|1.2.3.4"), (0, 0))
+
+    def test_non_admin_is_counted(self) -> None:
+        key = "user@test.local|5.6.7.8"
+        db.rate_limit_clear(limits.LOGIN[0], key)
+        for _ in range(limits.LOGIN[1]):
+            allowed, _ = limits.check(limits.LOGIN, key)
+            self.assertTrue(allowed)
+        allowed, wait = limits.check(limits.LOGIN, key)
+        self.assertFalse(allowed)
+        self.assertGreater(wait, 0)
+
+    def test_clear_and_prune(self) -> None:
+        db.rate_limit(self.bucket, "c", 1, 60)
+        self.assertEqual(db.rate_limit_clear(self.bucket, "c"), 1)
+        self.assertEqual(db.rate_limit_state(self.bucket, "c"), (0, 0))
+        db.rate_limit(self.bucket, "p", 5, -1)
+        db.rate_limit_prune()
+        self.assertEqual(db.rate_limit_state(self.bucket, "p"), (0, 0))
+
+    def test_policy_summary_shape(self) -> None:
+        rows = limits.summary()
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertGreater(row["limit"], 0)
+            self.assertGreater(row["window_detik"], 0)
+
+    def test_message_is_readable(self) -> None:
+        self.assertIn("detik", limits.message(30))
+        self.assertIn("menit", limits.message(300))
 
 
 class MateriToolTests(unittest.TestCase):

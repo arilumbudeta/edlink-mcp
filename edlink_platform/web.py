@@ -14,7 +14,7 @@ from typing import Any
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import db, security, store
+from . import db, limits, security, store
 
 STYLE = """
 :root{color-scheme:dark}
@@ -99,6 +99,19 @@ def _safe_next(value: str) -> str:
     return "/"
 
 
+def _too_many(wait: int, title: str = "Terlalu banyak percobaan") -> HTMLResponse:
+    """Halaman 429. Retry-After dikirim supaya klien tahu kapan boleh ulang."""
+    response = page(
+        title + " — EdLink MCP",
+        f'<div class="card"><h1>{_esc(title)}</h1>'
+        f'<div class="err">{_esc(limits.message(wait))}</div>'
+        '<p><a href="/login">Kembali ke halaman masuk</a></p></div>',
+        status=429,
+    )
+    response.headers["Retry-After"] = str(max(1, int(wait)))
+    return response
+
+
 # ------------------------------------------------------------------ routes ---
 
 def signup_get(request: Request) -> Response:
@@ -119,6 +132,10 @@ def signup_get(request: Request) -> Response:
 
 async def signup_post(request: Request) -> Response:
     ip = _ip(request)
+    allowed, wait = limits.check(limits.SIGNUP, ip)
+    if not allowed:
+        db.audit(None, "user.signup_blocked", "", ip)
+        return _too_many(wait, "Terlalu banyak pendaftaran")
 
     form = await request.form()
     email = str(form.get("email") or "").strip().lower()
@@ -172,6 +189,18 @@ async def login_post(request: Request) -> Response:
     email = str(form.get("email") or "").strip()
     password = str(form.get("password") or "")
     nxt = _safe_next(str(form.get("next") or "/dashboard"))
+
+    # Rate limit per akun+IP. Admin dikecualikan supaya pemilik server tidak
+    # pernah terkunci dari panelnya sendiri, bahkan saat salah password.
+    account = security.find_user_by_email(email.lower())
+    allowed, wait = limits.check(
+        limits.LOGIN,
+        f"{email.lower()}|{ip}",
+        is_admin=bool(account is not None and account["is_admin"]),
+    )
+    if not allowed:
+        db.audit(None, "user.login_blocked", email.lower()[:80], ip)
+        return _too_many(wait)
 
     user, reason = security.authenticate(email, password)
     if user is None:
@@ -323,6 +352,11 @@ buka DevTools dan tidak perlu menempel token apa pun.</p>
 
 async def link_post(request: Request, user: Any) -> Response:
     uid = user["user_id"]
+    allowed, wait = limits.check(limits.LINK, uid, is_admin=bool(user.get("is_admin")))
+    if not allowed:
+        db.audit(uid, "edlink.link_blocked", "", _ip(request))
+        return RedirectResponse("/dashboard?error=" + _q(limits.message(wait)), status_code=302)
+
     form = await request.form()
     token = str(form.get("token") or "").strip()
     email = str(form.get("email") or "").strip()
@@ -476,6 +510,13 @@ def admin_page(request: Request, viewer: Any) -> Response:
         " FROM users u ORDER BY u.created_at DESC LIMIT 200"
     )
     events = db.q("SELECT ts, user_id, action, detail, ip FROM audit_events ORDER BY id DESC LIMIT 40")
+    limit_rows = "".join(
+        f"<tr><td>{_esc(p['aksi'])}</td><td class='mono'>{_esc(p['bucket'])}</td>"
+        f"<td>{p['limit']}</td><td>{p['window_detik']}s</td></tr>"
+        for p in limits.summary()
+    )
+    active_row = db.q1("SELECT COUNT(*) AS n FROM rate_limits WHERE reset_at > ?", (db.now(),))
+    active_limits = int(active_row["n"]) if active_row else 0
 
     user_rows = "".join(
         f"<tr><td class='mono'>{_esc(r['id'])}</td><td>{_esc(r['email'])}</td>"
@@ -486,7 +527,8 @@ def admin_page(request: Request, viewer: Any) -> Response:
         f"<input type='hidden' name='user_id' value='{_esc(r['id'])}'>"
         f"<select name='action'><option value='suspend'>suspend</option><option value='activate'>activate</option>"
         f"<option value='revoke_sessions'>revoke sessions</option><option value='revoke_tokens'>revoke tokens</option>"
-        f"<option value='unlink'>unlink edlink</option></select>"
+        f"<option value='unlink'>unlink edlink</option>"
+        f"<option value='clear_limits'>clear rate limit</option></select>"
         f"<button type='submit' class='ghost'>jalankan</button></form></td></tr>"
         for r in rows
     )
@@ -500,6 +542,14 @@ def admin_page(request: Request, viewer: Any) -> Response:
 <h1>Admin</h1><p>{_esc(viewer['email'])} · <a href="/dashboard">dashboard</a></p>
 <h2 style="margin-top:20px">Pengguna ({len(rows)})</h2>
 <table><tr><th>ID</th><th>Email</th><th>Role</th><th>EdLink</th><th>Status</th><th>Aksi</th></tr>{user_rows}</table>
+</div>
+<div class="card">
+<h2>Rate limit</h2>
+<p>Kuota dihitung per identitas, bukan global: satu user yang membanjiri server tidak
+memperlambat user lain. Akun admin tidak pernah dihitung.</p>
+<table><tr><th>Aksi</th><th>Bucket</th><th>Limit</th><th>Window</th></tr>{limit_rows}</table>
+<p>{active_limits} baris hitungan aktif. Tombol <strong>clear rate limit</strong> di tabel
+pengguna menghapus hitungan untuk user itu saja.</p>
 </div>
 <div class="card">
 <h2>Audit terakhir</h2>
@@ -534,6 +584,9 @@ async def admin_action(request: Request, viewer: Any) -> Response:
         store.disconnect(target)
         security.revoke_mcp_tokens(target)
         security.revoke_refresh_tokens(target)
+    elif action == "clear_limits":
+        # Hapus hitungan yang key-nya memuat user_id (bucket link & mcp).
+        _cleared = db.rate_limit_clear("link", target) + db.rate_limit_clear("mcp", target)
     db.audit(viewer["user_id"], "admin." + action, target, _ip(request))
     return RedirectResponse("/admin", status_code=302)
 

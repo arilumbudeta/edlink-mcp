@@ -89,8 +89,12 @@ sungguhan sebelum disimpan, jadi kredensial salah tidak pernah masuk database.
   `/.well-known/oauth-protected-resource`, parameter `resource` di-echo,
   `iss` dikirim di redirect. Grant yang didukung: `authorization_code`,
   `refresh_token`.
-- Rate limit: **dimatikan** di deployment ini (keputusan owner). Signup, login, DCR,
-  token, dan link EdLink tidak dibatasi. Nyalakan lagi kalau server dibuka lebih luas.
+- Rate limit **per identitas** (`edlink_platform/limits.py`), bukan global: satu user
+  yang membanjiri server tidak memperlambat user lain. Kunci dan angkanya: `signup`
+  5/jam per IP, `login` 10/15 menit per email+IP, `link` 10/10 menit per user,
+  `dcr` 20/jam per IP, `token` 120/5 menit per client_id, `mcp` 600/menit per user.
+  Pelanggaran dibalas `429` + `Retry-After`. **Admin tidak pernah dihitung**, dan
+  panel `/admin` punya aksi `clear rate limit` untuk menghapus hitungan satu user.
 
 ## Penyimpanan kredensial EdLink
 
